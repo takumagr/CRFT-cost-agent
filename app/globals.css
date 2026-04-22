@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+:root {
+  --color-bg: #FFFFFF;
+  --color-bg-subtle: #F9FAFB;
+  --color-bg-muted: #F3F4F6;
+  --color-surface: #FFFFFF;
+  --color-border: #E5E7EB;
+  --color-border-strong: #D1D5DB;
+  --color-text: #111318;
+  --color-text-secondary: #6B7280;
+  --color-text-disabled: #9CA3AF;
+  --color-text-inverse: #FFFFFF;
+  --color-accent: #185C37;
+  --color-accent-hover: #0F4025;
+  --color-accent-subtle: #E8F0EA;
+  --color-accent-text: #0F4025;
+  --color-success: #16A34A;
+  --color-success-subtle: #F0FDF4;
+  --color-warning: #D97706;
+  --font-sans: "Inter", "Noto Sans JP", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+@theme inline {
+  --color-bg: var(--color-bg);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+html { -webkit-font-smoothing: antialiased; }
+body { background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans); font-size: 14px; }
+
+.btn-primary { background: var(--color-accent); color: #fff; border-radius: 6px; padding: 10px 18px; font-size: 13px; font-weight: 500; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.btn-ghost { background: transparent; color: var(--color-text-secondary); border: none; border-radius: 6px; padding: 8px 12px; font-size: 13px; cursor: pointer; }
+.card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 24px; }
+.badge { display: inline-flex; background: var(--color-bg-muted); color: var(--color-text-secondary); border: 1px solid var(--color-border); border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 500; }
+.badge-accent { background: var(--color-accent-subtle); color: var(--color-accent-text); border-color: transparent; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.fade-in { animation: fadeIn 200ms ease-out; }

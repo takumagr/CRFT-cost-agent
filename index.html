@@ -1,0 +1,2538 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRFT 調達AIエージェント</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+@font-face { font-family:'Futura'; src:url('project/fonts/Futura-Bold.woff') format('woff'); font-weight:700; }
+@font-face { font-family:'Futura'; src:url('project/fonts/Futura-Medium.woff') format('woff'); font-weight:500; }
+@font-face { font-family:'Futura'; src:url('project/fonts/Futura-Book.woff') format('woff'); font-weight:400; }
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --green-950: #071510; --green-900: #0a3d1f; --green-800: #0d4d26;
+  --green-700: #155e32; --green-600: #185C37; --green-500: #1e7a44;
+  --green-400: #2d9655; --green-200: #86d9a2; --green-100: #c3edce; --green-50: #edfdf3;
+  --yellow: #FFD601; --yellow-light: #fffce8; --yellow-mid: #fff5c2;
+  --zinc-950: #09090B; --zinc-900: #18181B; --zinc-800: #27272A; --zinc-700: #3F3F46;
+  --zinc-600: #52525B; --zinc-500: #71717A; --zinc-400: #A1A1AA; --zinc-300: #D4D4D8;
+  --zinc-200: #E4E4E7; --zinc-100: #F4F4F5; --zinc-50: #FAFAFA;
+  --success: #22C55E; --success-light: #dcfce7;
+  --warning: #F59E0B; --warning-light: #fef3c7;
+  --error: #EF4444; --error-light: #fee2e2;
+  --info: #3B82F6; --info-light: #dbeafe;
+  --ease: cubic-bezier(0.4,0.4,0,1);
+  --sidebar-w: 240px;
+}
+
+body {
+  font-family: 'Noto Sans JP', sans-serif;
+  background: var(--zinc-50);
+  color: var(--zinc-900);
+  height: 100vh;
+  overflow: hidden;
+  font-size: 14px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--zinc-300); border-radius: 4px; }
+
+/* Tweaks panel */
+#tweaks-panel {
+  position: fixed; bottom: 20px; right: 20px; z-index: 9999;
+  background: white; border: 1px solid var(--zinc-200); border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.12); padding: 16px 20px; width: 260px;
+  display: none;
+}
+#tweaks-panel h4 { font-family:'Futura',sans-serif; font-size:13px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--zinc-600); margin-bottom:14px; }
+.tw-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.tw-label { font-size:13px; color:var(--zinc-700); }
+.tw-toggle { width:36px; height:20px; border-radius:10px; border:none; cursor:pointer; position:relative; transition:background .2s; }
+.tw-toggle.on { background:var(--green-600); }
+.tw-toggle.off { background:var(--zinc-300); }
+.tw-toggle::after { content:''; position:absolute; top:3px; left:3px; width:14px; height:14px; border-radius:50%; background:white; transition:transform .2s; }
+.tw-toggle.on::after { transform:translateX(16px); }
+.tw-select { font-size:12px; border:1px solid var(--zinc-200); border-radius:6px; padding:4px 8px; background:white; color:var(--zinc-800); cursor:pointer; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<div id="tweaks-panel">
+  <h4>Tweaks</h4>
+  <div class="tw-row">
+    <span class="tw-label">ライブフィード</span>
+    <button class="tw-toggle on" id="tw-feed" onclick="toggleTweak('feed',this)"></button>
+  </div>
+  <div class="tw-row">
+    <span class="tw-label">コスト削減ハイライト</span>
+    <button class="tw-toggle on" id="tw-savings" onclick="toggleTweak('savings',this)"></button>
+  </div>
+  <div class="tw-row">
+    <span class="tw-label">サイドバー</span>
+    <select class="tw-select" id="tw-sidebar" onchange="setSidebarStyle(this.value)">
+      <option value="dark">ダーク</option>
+      <option value="light">ライト</option>
+    </select>
+  </div>
+</div>
+
+<script>
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "showFeed": true,
+  "showSavings": true,
+  "sidebarStyle": "dark"
+}/*EDITMODE-END*/;
+let tweaks = {...TWEAK_DEFAULTS};
+
+function toggleTweak(key, btn) {
+  const map = {feed:'showFeed', savings:'showSavings'};
+  tweaks[map[key]] = !tweaks[map[key]];
+  btn.className = 'tw-toggle ' + (tweaks[map[key]] ? 'on' : 'off');
+  window.__tweakBus && window.__tweakBus(tweaks);
+  window.parent.postMessage({type:'__edit_mode_set_keys', edits: tweaks}, '*');
+}
+function setSidebarStyle(val) {
+  tweaks.sidebarStyle = val;
+  window.__tweakBus && window.__tweakBus(tweaks);
+  window.parent.postMessage({type:'__edit_mode_set_keys', edits: tweaks}, '*');
+}
+
+window.addEventListener('message', e => {
+  if (e.data?.type === '__activate_edit_mode') document.getElementById('tweaks-panel').style.display='block';
+  if (e.data?.type === '__deactivate_edit_mode') document.getElementById('tweaks-panel').style.display='none';
+});
+window.parent.postMessage({type:'__edit_mode_available'}, '*');
+</script>
+
+<script type="text/babel">
+
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ─── ICONS ────────────────────────────────────────────────────────
+const IC = {
+  dash: "M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z",
+  bot: "M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1H1a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2M9 11a1 1 0 1 0 0 2 1 1 0 0 0 0-2m6 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2m-3 4c-1.1 0-2 .45-2 1h4c0-.55-.9-1-2-1z",
+  trend: "M23 6l-9.5 9.5-5-5L1 18M17 6h6v6",
+  package: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16zM12 2l7 4-7 4-7-4 7-4zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12",
+  bell: "M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0",
+  settings: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z",
+  chevR: "M9 18l6-6-6-6",
+  chevL: "M15 18l-6-6 6-6",
+  alert: "M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01",
+  check: "M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3",
+  clock: "M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zM12 6v6l4 2",
+  factory: "M2 20h20M5 20V9l7-6 7 6v11M9 14h2v6H9zM13 14h2v6h-2zM5 11h2M17 11h2",
+  truck: "M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
+  zap: "M13 2L3 14h9l-1 8 10-12h-9l1-8z",
+  arrow: "M5 12h14M12 5l7 7-7 7",
+  plus: "M12 5v14M5 12h14",
+  refresh: "M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15",
+  x: "M18 6L6 18M6 6l12 12",
+  bar: "M18 20V10M12 20V4M6 20v-6",
+  eye: "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
+  search: "M11 17a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM21 21l-4.35-4.35"
+};
+const Icon = ({ d, size = 16, color = 'currentColor', fill = 'none', strokeW = 1.8 }) =>
+<svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke={color} strokeWidth={strokeW} strokeLinecap="round" strokeLinejoin="round">
+    <path d={d} />
+  </svg>;
+
+
+// ─── MOCK DATA ─────────────────────────────────────────────────────
+const PRODUCTS = [
+{ id: 'p1', name: 'プレミアム醤油ドレッシング', variant: '300ml', sku: 'SKU-2341', agentId: 'AGT-001',
+  status: 'active', monthlySavings: 124000, targetSavings: 200000, orderFreq: '週次',
+  tier1: [
+  { id: 't1a', name: '山田食品工業', role: '製造', location: '千葉県', rating: 4.6, leadTime: '4週間', currentPrice: 184, bestQuote: 172, lots: [{ qty: 500, price: 184 }, { qty: 1000, price: 178 }, { qty: 3000, price: 172 }],
+    pricing: { material: 110, processing: 36, packaging: 14, logistics: 16, storage: 8, total: 184 },
+    tier2: [{ name: '丸大豆農産', role: '大豆原料', price: 42, unit: 'kg', lot: '500kg', leadTime: '5日' }, { name: '田中容器工業', role: 'ボトル', price: 18, unit: '本', lot: '3,000本', leadTime: '7日' }] },
+  { id: 't1b', name: '東京フーズ製造', role: '製造', location: '埼玉県', rating: 4.4, leadTime: '5週間', currentPrice: 191, bestQuote: 179, lots: [{ qty: 500, price: 191 }, { qty: 2000, price: 184 }, { qty: 5000, price: 179 }],
+    pricing: { material: 114, processing: 38, packaging: 15, logistics: 15, storage: 9, total: 191 },
+    tier2: [{ name: '北海道産業', role: '調味料原料', price: 38, unit: 'kg', lot: '1,000kg', leadTime: '6日' }, { name: '大和包装', role: 'ラベル', price: 6, unit: '枚', lot: '10,000枚', leadTime: '4日' }] }]
+
+},
+{ id: 'p2', name: '有機野菜スープ', variant: '180g缶', sku: 'SKU-1892', agentId: 'AGT-002',
+  status: 'negotiating', monthlySavings: 89000, targetSavings: 150000, orderFreq: '月次',
+  tier1: [
+  { id: 't2a', name: '大阪食品OEM', role: '製造', location: '大阪府', rating: 4.5, leadTime: '3週間', currentPrice: 312, bestQuote: 290, lots: [{ qty: 200, price: 312 }, { qty: 800, price: 302 }, { qty: 2000, price: 290 }],
+    pricing: { material: 192, processing: 58, packaging: 22, logistics: 26, storage: 14, total: 312 },
+    tier2: [{ name: '淡路島農協', role: '野菜原料', price: 88, unit: 'kg', lot: '200kg', leadTime: '3日' }, { name: '関西缶詰工業', role: '缶容器', price: 24, unit: '缶', lot: '2,000缶', leadTime: '10日' }] },
+  { id: 't2b', name: '九州食品センター', role: '製造', location: '福岡県', rating: 4.8, leadTime: '4週間', currentPrice: 298, bestQuote: 285, lots: [{ qty: 500, price: 298 }, { qty: 1500, price: 291 }, { qty: 4000, price: 285 }],
+    pricing: { material: 183, processing: 58, packaging: 20, logistics: 25, storage: 12, total: 298 },
+    tier2: [{ name: '熊本農業公社', role: '野菜原料', price: 82, unit: 'kg', lot: '300kg', leadTime: '4日' }, { name: '博多包装', role: '缶容器', price: 22, unit: '缶', lot: '3,000缶', leadTime: '8日' }] }]
+
+},
+{ id: 'p3', name: 'グルテンフリーパスタ', variant: '500g', sku: 'SKU-3301', agentId: 'AGT-003',
+  status: 'alert', monthlySavings: 0, targetSavings: 120000, orderFreq: '隔週',
+  tier1: [
+  { id: 't3a', name: '長野食品加工', role: '製造', location: '長野県', rating: 4.2, leadTime: '6週間', currentPrice: 248, bestQuote: 248, lots: [{ qty: 300, price: 248 }, { qty: 1000, price: 238 }, { qty: 3000, price: 228 }],
+    pricing: { material: 150, processing: 48, packaging: 18, logistics: 22, storage: 10, total: 248 },
+    tier2: [{ name: '北海道米粉農協', role: '米粉原料', price: 65, unit: 'kg', lot: '500kg', leadTime: '6日' }, { name: '信州包装', role: '袋', price: 12, unit: '枚', lot: '5,000枚', leadTime: '5日' }] }]
+
+},
+{ id: 'p4', name: '豆腐チップス', variant: '100g', sku: 'SKU-0882', agentId: 'AGT-004',
+  status: 'active', monthlySavings: 67000, targetSavings: 100000, orderFreq: '週次',
+  tier1: [
+  { id: 't4a', name: '京都豆腐工業', role: '製造', location: '京都府', rating: 4.7, leadTime: '3週間', currentPrice: 128, bestQuote: 116, lots: [{ qty: 1000, price: 128 }, { qty: 5000, price: 122 }, { qty: 10000, price: 116 }],
+    pricing: { material: 72, processing: 28, packaging: 10, logistics: 12, storage: 6, total: 128 },
+    tier2: [{ name: '滋賀大豆農園', role: '大豆', price: 44, unit: 'kg', lot: '1,000kg', leadTime: '4日' }, { name: '京都容器', role: 'パウチ', price: 8, unit: '枚', lot: '20,000枚', leadTime: '6日' }] }]
+
+},
+{ id: 'p5', name: '抹茶プロテインバー', variant: '40g', sku: 'SKU-4421', agentId: 'AGT-005',
+  status: 'active', monthlySavings: 45000, targetSavings: 80000, orderFreq: '月次',
+  tier1: [
+  { id: 't5a', name: '静岡スポーツ食品', role: '製造', location: '静岡県', rating: 4.5, leadTime: '4週間', currentPrice: 94, bestQuote: 86, lots: [{ qty: 500, price: 94 }, { qty: 2000, price: 90 }, { qty: 8000, price: 86 }],
+    pricing: { material: 49, processing: 22, packaging: 8, logistics: 10, storage: 5, total: 94 },
+    tier2: [{ name: '西尾抹茶農園', role: '抹茶', price: 28, unit: 'g', lot: '10kg', leadTime: '10日' }, { name: '名古屋包装材', role: '個包装', price: 5, unit: '枚', lot: '10,000枚', leadTime: '5日' }] }]
+
+}];
+
+
+const ACTIVITY = [
+{ id: 1, agentId: 'AGT-001', product: '醤油ドレッシング', action: '山田食品工業に相見積依頼を送信', type: 'send', time: '28秒前', impact: null },
+{ id: 2, agentId: 'AGT-002', product: '有機野菜スープ', action: '大阪食品OEMと価格交渉中 — ¥22,000削減見込み', type: 'negotiate', time: '1分前', impact: 22000 },
+{ id: 3, agentId: 'AGT-003', product: 'グルテンフリーパスタ', action: '北海道米粉農協: 納期3日延滞を検知、督促メール自動送信', type: 'alert', time: '4分前', impact: null },
+{ id: 4, agentId: 'AGT-004', product: '豆腐チップス', action: '京都豆腐工業より見積回答 ¥116/個 (前回比-9.4%)', type: 'quote', time: '12分前', impact: 12000 },
+{ id: 5, agentId: 'AGT-001', product: '醤油ドレッシング', action: '東京フーズ製造との発注統合案を生成 — ¥18,400/月削減', type: 'optimize', time: '18分前', impact: 18400 },
+{ id: 6, agentId: 'AGT-005', product: '抹茶プロテインバー', action: '西尾抹茶農園: ロット3000→8000に変更で¥8/個削減', type: 'optimize', time: '31分前', impact: 8000 },
+{ id: 7, agentId: 'AGT-002', product: '有機野菜スープ', action: '九州食品センターが代替調達先として承認済み', type: 'check', time: '45分前', impact: null },
+{ id: 8, agentId: 'AGT-003', product: 'グルテンフリーパスタ', action: '発注書 PO-20240418-003と納品書の数量不一致を検出 (差異: 50kg)', type: 'alert', time: '1時間前', impact: null }];
+
+
+const ORDERS = [
+{ id: 'PO-20260418-001', product: 'プレミアム醤油ドレッシング', supplier: '山田食品工業', ordered: '2026/04/18', delivery: '2026/04/25', qty: 1000, unit: '本', status: 'on_track', analysis: '正常', discrepancy: null },
+{ id: 'PO-20260415-002', product: '有機野菜スープ', supplier: '大阪食品OEM', ordered: '2026/04/15', delivery: '2026/04/28', qty: 500, unit: '缶', status: 'negotiating', analysis: '価格差異', discrepancy: { type: 'price', detail: '発注単価 ¥312 → 請求 ¥318 (+¥6/缶)。承認待ち。', severity: 'warning' } },
+{ id: 'PO-20260413-003', product: 'グルテンフリーパスタ', supplier: '長野食品加工', ordered: '2026/04/13', delivery: '2026/04/21', qty: 300, unit: '袋', status: 'delayed', analysis: '遅延リスク', discrepancy: { type: 'delay', detail: '当初納期より3日遅延。督促済み。代替調達先を検索中。', severity: 'error' } },
+{ id: 'PO-20260418-004', product: '豆腐チップス', supplier: '京都豆腐工業', ordered: '2026/04/18', delivery: '2026/04/26', qty: 5000, unit: '個', status: 'on_track', analysis: '正常', discrepancy: null },
+{ id: 'PO-20260410-005', product: '抹茶プロテインバー', supplier: '静岡スポーツ食品', ordered: '2026/04/10', delivery: '2026/04/17', qty: 2000, unit: '本', status: 'completed', analysis: '完了', discrepancy: null },
+{ id: 'PO-20260416-006', product: '有機野菜スープ', supplier: '九州食品センター', ordered: '2026/04/16', delivery: '2026/04/24', qty: 800, unit: '缶', status: 'on_track', analysis: '正常', discrepancy: null },
+{ id: 'PO-20260412-007', product: 'プレミアム醤油ドレッシング', supplier: '東京フーズ製造', ordered: '2026/04/12', delivery: '2026/04/19', qty: 500, unit: '本', status: 'qty_mismatch', analysis: '数量差異', discrepancy: { type: 'qty', detail: '納品書数量 480本 vs 発注 500本 (差異: 20本)。確認依頼済み。', severity: 'warning' } }];
+
+
+const ALERTS = [
+{ id: 'a1', type: 'error', product: 'グルテンフリーパスタ', msg: '長野食品加工: 納期3日遅延。代替調達中。', time: '4分前', action: '対処中' },
+{ id: 'a2', type: 'warning', product: '有機野菜スープ', msg: '大阪食品OEM: 請求単価が発注価格と乖離 (+¥6/缶)', time: '2時間前', action: '承認待ち' },
+{ id: 'a3', type: 'warning', product: '醤油ドレッシング', msg: '東京フーズ: 納品数量が20本不足。確認依頼送信済み。', time: '1日前', action: '回答待ち' }];
+
+
+// ─── COMPONENTS ───────────────────────────────────────────────────
+const Badge = ({ children, type = 'neutral', size = 'sm' }) => {
+  const colors = {
+    neutral: { bg: '#F4F4F5', color: '#52525B' },
+    green: { bg: '#dcfce7', color: '#166534' },
+    yellow: { bg: '#FFF8CC', color: '#854D0E' },
+    red: { bg: '#fee2e2', color: '#991B1B' },
+    orange: { bg: '#fef3c7', color: '#92400E' },
+    blue: { bg: '#dbeafe', color: '#1E40AF' },
+    primary: { bg: '#185C37', color: '#fff' }
+  };
+  const c = colors[type] || colors.neutral;
+  const fs = size === 'xs' ? 11 : 12;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 6, background: c.bg, color: c.color, fontSize: fs, fontWeight: 600, whiteSpace: 'nowrap' }}>
+      {children}
+    </span>);
+
+};
+
+const KpiCard = ({ label, value, sub, icon, accent }) =>
+<div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '20px 22px', flex: 1, minWidth: 0 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+      <span style={{ fontSize: 12, color: 'var(--zinc-500)', fontWeight: 500 }}>{label}</span>
+      <span style={{ color: accent || 'var(--green-600)', opacity: .9 }}><Icon d={icon} size={18} /></span>
+    </div>
+    <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--zinc-900)', letterSpacing: '-0.02em', marginBottom: 4 }}>{value}</div>
+    <div style={{ fontSize: 12, color: 'var(--zinc-400)' }}>{sub}</div>
+  </div>;
+
+
+// ─── SCREEN: DASHBOARD ────────────────────────────────────────────
+const ScreenDashboard = ({ tweaks }) => {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!tweaks.showFeed) return;
+    const id = setInterval(() => setTick((t) => t + 1), 4000);
+    return () => clearInterval(id);
+  }, [tweaks.showFeed]);
+
+  const totalSavings = PRODUCTS.reduce((s, p) => s + p.monthlySavings, 0);
+  const activeAgents = PRODUCTS.filter((p) => p.status === 'active').length;
+  const alertCount = ALERTS.length;
+  const visibleFeed = ACTIVITY.slice(0, 6);
+
+  const activityIcon = { send: 'arrow', negotiate: 'refresh', alert: 'alert', quote: 'bar', optimize: 'zap', check: 'check' };
+  const activityColor = { send: 'var(--info)', negotiate: 'var(--yellow)', alert: 'var(--error)', quote: 'var(--green-600)', optimize: 'var(--yellow)', check: 'var(--success)' };
+
+  return (
+    <div style={{ padding: '28px 32px', overflowY: 'auto', height: '100%' }}>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <span style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--zinc-400)' }}>OVERVIEW</span>
+        </div>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--zinc-900)', letterSpacing: '-0.01em' }}>調達AIエージェント ダッシュボード</h1>
+      </div>
+
+      {/* KPIs */}
+      <div style={{ display: 'flex', gap: 16, marginBottom: 24 }}>
+        <KpiCard label="月間削減額" value={`¥${(totalSavings / 10000).toFixed(1)}万`} sub="前月比 +¥6.2万" icon={IC.trend} accent="var(--green-600)" />
+        <KpiCard label="稼働エージェント" value={`${PRODUCTS.length}体`} sub={`交渉中 1 · アラート 1`} icon={IC.bot} accent="var(--yellow)" />
+        <KpiCard label="アクティブアラート" value={alertCount} sub="要対応 2件" icon={IC.alert} accent="var(--error)" />
+        <KpiCard label="発注自動化率" value="87%" sub="今月 23件/26件を自動処理" icon={IC.refresh} accent="var(--info)" />
+      </div>
+
+      {/* Main 2-col */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16 }}>
+        {/* Activity feed */}
+        <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--zinc-100)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Icon d={IC.zap} size={15} color="var(--yellow)" />
+              <span style={{ fontWeight: 600, fontSize: 14 }}>エージェントアクティビティ</span>
+            </div>
+            {tweaks.showFeed &&
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--success)', display: 'inline-block', animation: 'pulse 2s infinite' }} />
+                <span style={{ fontSize: 11, color: 'var(--zinc-400)' }}>ライブ</span>
+              </div>
+            }
+          </div>
+          <div style={{ padding: '8px 0' }}>
+            {visibleFeed.map((a, i) =>
+            <div key={a.id} style={{ display: 'flex', gap: 12, padding: '12px 20px', borderBottom: '1px solid var(--zinc-50)', transition: 'background .2s', cursor: 'default' }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--zinc-50)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                <div style={{ width: 30, height: 30, borderRadius: 8, background: activityColor[a.type] + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Icon d={IC[activityIcon[a.type]] || IC.zap} size={14} color={activityColor[a.type]} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                    <span style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, color: 'var(--green-600)', letterSpacing: '.06em' }}>{a.agentId}</span>
+                    <span style={{ fontSize: 11, color: 'var(--zinc-400)' }}>·</span>
+                    <span style={{ fontSize: 11, color: 'var(--zinc-400)' }}>{a.product}</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--zinc-700)', lineHeight: 1.4 }}>{a.action}</div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, color: 'var(--zinc-400)' }}>{a.time}</span>
+                  {a.impact && tweaks.showSavings &&
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green-600)' }}>▲ ¥{a.impact.toLocaleString()}</span>
+                }
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right col */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Alerts */}
+          <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, overflow: 'hidden' }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--zinc-100)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Icon d={IC.alert} size={14} color="var(--error)" />
+              <span style={{ fontWeight: 600, fontSize: 13 }}>要対応アラート</span>
+              <Badge type="red">{ALERTS.length}</Badge>
+            </div>
+            {ALERTS.map((al) =>
+            <div key={al.id} style={{ padding: '12px 18px', borderBottom: '1px solid var(--zinc-50)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: al.type === 'error' ? 'var(--error)' : 'var(--warning)' }}>{al.product}</span>
+                  <Badge type={al.type === 'error' ? 'red' : 'orange'} size="xs">{al.action}</Badge>
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--zinc-500)', lineHeight: 1.45 }}>{al.msg}</p>
+                <span style={{ fontSize: 11, color: 'var(--zinc-400)' }}>{al.time}</span>
+              </div>
+            )}
+          </div>
+          {/* Agent summary */}
+          <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '16px 18px' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>エージェント稼働状況</div>
+            {PRODUCTS.map((p) =>
+            <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: p.status === 'active' ? 'var(--success)' : p.status === 'negotiating' ? 'var(--yellow)' : 'var(--error)', flexShrink: 0 }} />
+                  <span style={{ fontSize: 12, color: 'var(--zinc-700)' }}>{p.name.length > 12 ? p.name.slice(0, 12) + '…' : p.name}</span>
+                </div>
+                <span style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', color: 'var(--zinc-400)', letterSpacing: '.04em' }}>{p.agentId}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>);
+
+};
+
+// ─── COMPARISON TABLE + SCREEN: AGENTS ───────────────────────────
+const ComparisonTable = ({ product, tweaks }) => {
+  const [lotMode, setLotMode] = useState('min');
+  const suppliers = product.tier1;
+  const getPrice = (t1) => lotMode === 'min' ? t1.lots[0].price : t1.lots[t1.lots.length - 1].price;
+  const getQty = (t1) => lotMode === 'min' ? t1.lots[0].qty : t1.lots[t1.lots.length - 1].qty;
+
+  const ROWS = [
+  { key: 'price', label: '製造単価', bold: true, raw: (t1) => getPrice(t1), fmt: (t1) => `¥${getPrice(t1)}` },
+  { key: 'qty', label: '発注ロット', bold: false, raw: null, fmt: (t1) => `${getQty(t1).toLocaleString()}個` },
+  { key: 'lead', label: '納品リードタイム', bold: false, raw: null, fmt: (t1) => t1.leadTime },
+  { key: 'sep1', sep: true, label: 'コスト内訳' },
+  { key: 'proc', label: '加工賃', bold: false, raw: (t1) => t1.pricing.processing, fmt: (t1) => `¥${t1.pricing.processing}` },
+  { key: 'pkg', label: '包装資材費', bold: false, raw: (t1) => t1.pricing.packaging, fmt: (t1) => `¥${t1.pricing.packaging}` },
+  { key: 'logi', label: '輸送費', bold: false, raw: (t1) => t1.pricing.logistics, fmt: (t1) => `¥${t1.pricing.logistics}` },
+  { key: 'stor', label: '保管料', bold: false, raw: (t1) => t1.pricing.storage, fmt: (t1) => `¥${t1.pricing.storage}` },
+  { key: 'sep2', sep: true, label: '合計' },
+  { key: 'total', label: '合計コスト', bold: true, raw: (t1) => getPrice(t1), fmt: (t1) => `¥${getPrice(t1)}` }];
+
+
+  const bestOf = (row) => {
+    if (!row.raw) return null;
+    const vals = suppliers.map(row.raw);
+    return Math.min(...vals);
+  };
+
+  return (
+    <div>
+      {/* Lot switch */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: '9px 14px', background: 'var(--zinc-50)', borderRadius: 8, border: '1px solid var(--zinc-200)' }}>
+        <span style={{ fontSize: 12, color: 'var(--zinc-500)' }}>発注ロット:</span>
+        <div style={{ display: 'flex', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 6, overflow: 'hidden' }}>
+          {[{ k: 'min', l: '最小ロット' }, { k: 'econ', l: '経済ロット' }].map((o) =>
+          <button key={o.k} onClick={() => setLotMode(o.k)}
+          style={{ padding: '5px 14px', border: 'none', background: lotMode === o.k ? 'var(--green-600)' : 'white', color: lotMode === o.k ? 'white' : 'var(--zinc-600)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', transition: 'background .15s' }}>
+              {o.l}
+            </button>
+          )}
+        </div>
+        <span style={{ fontSize: 11, color: 'var(--zinc-400)' }}>
+          {lotMode === 'min' ? `${suppliers[0]?.lots[0]?.qty.toLocaleString()}個〜` : `${suppliers[0]?.lots[suppliers[0].lots.length - 1]?.qty.toLocaleString()}個〜`}
+        </span>
+      </div>
+
+      {/* Table */}
+      <div style={{ border: '1px solid var(--zinc-200)', borderRadius: 10, overflow: 'hidden', marginBottom: 16 }}>
+        {/* Header */}
+        <div style={{ display: 'grid', gridTemplateColumns: `160px repeat(${suppliers.length},1fr)`, background: 'var(--zinc-50)', borderBottom: '2px solid var(--zinc-200)' }}>
+          <div style={{ padding: '12px 14px', fontSize: 11, fontWeight: 600, color: 'var(--zinc-400)', letterSpacing: '.06em', textTransform: 'uppercase' }}>見積項目</div>
+          {suppliers.map((t1) =>
+          <div key={t1.id} style={{ padding: '12px 16px', borderLeft: '1px solid var(--zinc-200)' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--zinc-800)', marginBottom: 2 }}>{t1.name}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 11, color: 'var(--zinc-400)' }}>{t1.location}</span>
+                <span style={{ fontSize: 11, color: 'var(--yellow)', fontWeight: 700 }}>★{t1.rating}</span>
+              </div>
+            </div>
+          )}
+        </div>
+        {/* Rows */}
+        {ROWS.map((row) => {
+          if (row.sep) return (
+            <div key={row.key} style={{ background: 'var(--zinc-100)', borderTop: '1px solid var(--zinc-200)', padding: '5px 14px', fontSize: 10, fontWeight: 700, color: 'var(--zinc-400)', letterSpacing: '.08em', textTransform: 'uppercase' }}>
+              {row.label}
+            </div>);
+
+          const best = bestOf(row);
+          return (
+            <div key={row.key} style={{ display: 'grid', gridTemplateColumns: `160px repeat(${suppliers.length},1fr)`, borderTop: '1px solid var(--zinc-100)', background: row.bold ? 'var(--zinc-50)' : 'white' }}>
+              <div style={{ padding: '10px 14px', fontSize: 13, fontWeight: row.bold ? 600 : 400, color: row.bold ? 'var(--zinc-800)' : 'var(--zinc-600)' }}>{row.label}</div>
+              {suppliers.map((t1) => {
+                const raw = row.raw ? row.raw(t1) : null;
+                const isBest = best !== null && raw === best && suppliers.length > 1;
+                return (
+                  <div key={t1.id} style={{ padding: '10px 16px', borderLeft: '1px solid var(--zinc-100)', background: isBest && tweaks.showSavings ? 'var(--green-50)' : 'transparent', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: row.bold ? 700 : 400, color: isBest && tweaks.showSavings ? 'var(--green-700)' : 'var(--zinc-800)' }}>{row.fmt(t1)}</span>
+                    {isBest && tweaks.showSavings &&
+                    <Badge type="green" size="xs">最安</Badge>
+                    }
+                  </div>);
+
+              })}
+            </div>);
+
+        })}
+      </div>
+
+      {/* Tier2 */}
+      <SupplyChainTreeView product={product} tweaks={tweaks} />
+    </div>);
+
+};
+
+// ─── SUPPLY CHAIN TREE VIEW ─────────────────────────────────────
+// Generates QCD alternatives for each Tier2 supplier
+const T2_ALTERNATIVES = {
+  '丸大豆農産': [
+  { name: '北海道大豆組合', role: '大豆原料', price: 38, unit: 'kg', lot: '500kg', leadTime: '7日', rating: 4.7, deltaPrice: -4, deltaLT: +2, qScore: '+0.3', reason: '有機JAS認証あり、契約農家ネットワークで安定供給' },
+  { name: '国産大豆ファーム', role: '大豆原料', price: 40, unit: 'kg', lot: '300kg', leadTime: '4日', rating: 4.5, deltaPrice: -2, deltaLT: -1, qScore: '+0.1', reason: '最小ロット300kgでテスト導入容易' }],
+
+  '田中容器工業': [
+  { name: '関東PETボトル', role: 'ボトル', price: 15, unit: '本', lot: '5,000本', leadTime: '5日', rating: 4.6, deltaPrice: -3, deltaLT: -2, qScore: '+0.2', reason: 'rPET使用率30%対応、サステナブル要件適合' }],
+
+  '北海道産業': [
+  { name: '信州調味料', role: '調味料原料', price: 35, unit: 'kg', lot: '500kg', leadTime: '4日', rating: 4.6, deltaPrice: -3, deltaLT: -2, qScore: '+0.4', reason: '近距離で物流費削減、HACCP取得済' }],
+
+  '大和包装': [
+  { name: '東日本ラベル', role: 'ラベル', price: 5, unit: '枚', lot: '15,000枚', leadTime: '3日', rating: 4.4, deltaPrice: -1, deltaLT: -1, qScore: 0, reason: '大ロット対応で単価¥1削減' }],
+
+  '淡路島農協': [
+  { name: '瀬戸内農業組合', role: '野菜原料', price: 78, unit: 'kg', lot: '200kg', leadTime: '2日', rating: 4.8, deltaPrice: -10, deltaLT: -1, qScore: '+0.3', reason: '産地近接で輸送コスト圧縮、当日収穫対応可' },
+  { name: '四国オーガニック', role: '野菜原料', price: 82, unit: 'kg', lot: '100kg', leadTime: '3日', rating: 4.7, deltaPrice: -6, deltaLT: 0, qScore: '+0.2', reason: '有機JAS、バックアップ用途に最適' }],
+
+  '関西缶詰工業': [
+  { name: '西日本製缶', role: '缶容器', price: 21, unit: '缶', lot: '3,000缶', leadTime: '7日', rating: 4.6, deltaPrice: -3, deltaLT: -3, qScore: '+0.1', reason: '印刷ライン更新で短納期化' }],
+
+  '熊本農業公社': [
+  { name: '九州スマート農業', role: '野菜原料', price: 75, unit: 'kg', lot: '500kg', leadTime: '3日', rating: 4.9, deltaPrice: -7, deltaLT: -1, qScore: '+0.2', reason: 'IoT管理農場で品質安定、ロット拡張可' }],
+
+  '博多包装': [
+  { name: '長崎缶パック', role: '缶容器', price: 20, unit: '缶', lot: '5,000缶', leadTime: '6日', rating: 4.5, deltaPrice: -2, deltaLT: -2, qScore: 0, reason: '24時間対応窓口、緊急発注可' }],
+
+  '北海道米粉農協': [
+  { name: '東北米粉工業', role: '米粉原料', price: 58, unit: 'kg', lot: '500kg', leadTime: '4日', rating: 4.5, deltaPrice: -7, deltaLT: -2, qScore: '+0.1', reason: 'グルテンフリー専用ライン保有' }],
+
+  '信州包装': [
+  { name: '中部フレキシブル', role: '袋', price: 10, unit: '枚', lot: '10,000枚', leadTime: '4日', rating: 4.4, deltaPrice: -2, deltaLT: -1, qScore: 0, reason: 'バリア性向上フィルムを同価格で提供' }]
+
+};
+
+const T2Card = ({ t2, isAlt, onAct, parentName }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ border: `1px solid ${isAlt ? '#bbf7d0' : 'var(--zinc-200)'}`, borderRadius: 10, background: isAlt ? 'rgba(240,253,244,.6)' : 'white', marginBottom: 8, position: 'relative', overflow: 'hidden', transition: 'all .15s' }}>
+      <div onClick={() => setOpen((o) => !o)} style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+        <Badge type={isAlt ? 'green' : 'neutral'} size="xs">{isAlt ? '代替案' : 'Tier2'}</Badge>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--zinc-800)' }}>{t2.name}</span>
+            <span style={{ fontSize: 10, color: 'var(--zinc-400)' }}>· {t2.role}</span>
+            {t2.rating && <span style={{ fontSize: 10, color: 'var(--yellow)', fontWeight: 700 }}>★{t2.rating}</span>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, color: 'var(--zinc-500)' }}>
+            <span>¥{t2.price}/{t2.unit}</span>
+            <span style={{ color: 'var(--zinc-300)' }}>·</span>
+            <span>最小 {t2.lot}</span>
+            <span style={{ color: 'var(--zinc-300)' }}>·</span>
+            <span>LT:{t2.leadTime}</span>
+          </div>
+        </div>
+        {isAlt &&
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            {t2.deltaPrice < 0 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--green-600)', padding: '2px 7px', background: 'var(--green-50)', borderRadius: 10, border: '1px solid var(--green-200)' }}>C ¥{Math.abs(t2.deltaPrice)}↓</span>}
+            {t2.deltaLT < 0 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--info)', padding: '2px 7px', background: 'var(--info-light)', borderRadius: 10, border: '1px solid #bfdbfe' }}>D {Math.abs(t2.deltaLT)}日↓</span>}
+            {t2.qScore && t2.qScore !== 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#92400e', padding: '2px 7px', background: '#fef3c7', borderRadius: 10, border: '1px solid #fcd34d' }}>Q {t2.qScore}</span>}
+          </div>
+        }
+        <Icon d={IC.chevR} size={12} color="var(--zinc-400)" style={{ transform: open ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform .15s' }} />
+      </div>
+      {open &&
+      <div style={{ padding: '10px 14px 14px', borderTop: '1px solid ' + (isAlt ? '#bbf7d0' : 'var(--zinc-100)'), background: isAlt ? 'rgba(240,253,244,.4)' : 'var(--zinc-50)' }}>
+          {isAlt ?
+        <>
+              <div style={{ fontSize: 11, color: 'var(--zinc-500)', lineHeight: 1.6, marginBottom: 10 }}>
+                <strong style={{ color: 'var(--green-700)' }}>切替メリット:</strong> {t2.reason}
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button onClick={(e) => {e.stopPropagation();onAct && onAct(t2, parentName);}}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  <Icon d={IC.zap} size={12} color="white" />エージェントに切替交渉を依頼
+                </button>
+                <button style={{ padding: '7px 12px', background: 'white', color: 'var(--zinc-600)', border: '1px solid var(--zinc-200)', borderRadius: 7, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>詳細を見る</button>
+              </div>
+            </> :
+
+        <div style={{ fontSize: 11, color: 'var(--zinc-500)', lineHeight: 1.6 }}>
+              現在採用中の{t2.role}。直近12ヶ月の納期遵守率 98%、品質クレーム 0件。
+            </div>
+        }
+        </div>
+      }
+    </div>);
+
+};
+
+const SupplyChainTreeView = ({ product, tweaks }) => {
+  const [toast, setToast] = useState('');
+  const handleAct = (alt, parent) => {
+    setToast(`AGT-${product.agentId.slice(-3)} に「${parent} → ${alt.name}」への切替交渉を依頼しました`);
+    setTimeout(() => setToast(''), 3500);
+  };
+
+  // Count total alternatives across all Tier2
+  const altCount = product.tier1.reduce((sum, t1) => sum + t1.tier2.reduce((s, t2) => s + (T2_ALTERNATIVES[t2.name]?.length || 0), 0), 0);
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--zinc-700)', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Icon d={IC.factory} size={13} color="var(--green-600)" />
+            サプライチェーン構造 ・ Tier2 切替提案
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--zinc-500)' }}>QCD改善余地のある原材料サプライヤーを<strong style={{ color: 'var(--green-700)' }}>{altCount}件</strong>特定。各候補から直接エージェントに交渉を依頼できます。</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, fontSize: 10, color: 'var(--zinc-400)', alignItems: 'center' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--green-50)', border: '1px solid var(--green-200)' }} />代替案</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ padding: '1px 6px', fontSize: 9, fontWeight: 700, color: 'var(--green-600)', background: 'var(--green-50)', borderRadius: 8, border: '1px solid var(--green-200)' }}>C</span>コスト</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ padding: '1px 6px', fontSize: 9, fontWeight: 700, color: 'var(--info)', background: 'var(--info-light)', borderRadius: 8, border: '1px solid #bfdbfe' }}>D</span>納期</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ padding: '1px 6px', fontSize: 9, fontWeight: 700, color: '#92400e', background: '#fef3c7', borderRadius: 8, border: '1px solid #fcd34d' }}>Q</span>品質</span>
+        </div>
+      </div>
+
+      {toast &&
+      <div style={{ position: 'sticky', top: 0, marginBottom: 12, padding: '10px 14px', background: 'var(--green-700)', color: 'white', borderRadius: 8, fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 12px rgba(0,0,0,.12)', zIndex: 50 }}>
+          <Icon d={IC.check} size={14} color="white" />{toast}
+        </div>
+      }
+
+      {/* Tree */}
+      <div style={{ position: 'relative', padding: '14px 0' }}>
+        {/* Product root */}
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: 'var(--zinc-900)', color: 'white', borderRadius: 10, marginBottom: 8 }}>
+          <Icon d={IC.zap} size={14} color="#FFD601" />
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>{product.name}</div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,.6)', fontFamily: 'Futura,sans-serif', letterSpacing: '.06em' }}>{product.sku}</div>
+          </div>
+        </div>
+
+        {/* Tier1 branches */}
+        <div style={{ paddingLeft: 24, position: 'relative' }}>
+          {product.tier1.map((t1, t1idx) =>
+          <div key={t1.id} style={{ position: 'relative', marginBottom: 14 }}>
+              {/* Connector */}
+              <div style={{ position: 'absolute', left: -24, top: -8, bottom: 0, width: 1, background: 'var(--zinc-200)' }} />
+              <div style={{ position: 'absolute', left: -24, top: 18, width: 18, height: 1, background: 'var(--zinc-200)' }} />
+
+              {/* Tier1 node */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'white', border: '1.5px solid var(--zinc-300)', borderRadius: 10, marginBottom: 10 }}>
+                <Badge type="primary" size="xs">Tier1</Badge>
+                <Icon d={IC.factory} size={13} color="var(--zinc-500)" />
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--zinc-800)' }}>{t1.name}</span>
+                <span style={{ fontSize: 11, color: 'var(--zinc-400)' }}>{t1.location}</span>
+                <span style={{ fontSize: 11, color: 'var(--yellow)', fontWeight: 700 }}>★{t1.rating}</span>
+                <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--zinc-500)' }}>¥{t1.currentPrice}/個 · LT:{t1.leadTime}</span>
+              </div>
+
+              {/* Tier2 children */}
+              <div style={{ paddingLeft: 28, position: 'relative' }}>
+                <div style={{ position: 'absolute', left: 14, top: -6, bottom: 6, width: 1, background: 'var(--zinc-200)' }} />
+                {t1.tier2.map((t2, t2idx) => {
+                const alts = T2_ALTERNATIVES[t2.name] || [];
+                return (
+                  <div key={t1.id + t2.name} style={{ position: 'relative', marginBottom: 10 }}>
+                      <div style={{ position: 'absolute', left: -14, top: 18, width: 14, height: 1, background: 'var(--zinc-200)' }} />
+                      <T2Card t2={t2} isAlt={false} parentName={t2.name} />
+                      {alts.length > 0 &&
+                    <div style={{ paddingLeft: 22, position: 'relative', marginTop: -2 }}>
+                          <div style={{ position: 'absolute', left: 8, top: -6, bottom: 6, width: 1, background: '#bbf7d0', borderLeft: '1px dashed #86efac' }} />
+                          {alts.map((alt) =>
+                      <div key={alt.name} style={{ position: 'relative' }}>
+                              <div style={{ position: 'absolute', left: -14, top: 18, width: 14, height: 1, background: '#86efac', borderTop: '1px dashed #86efac' }} />
+                              <T2Card t2={alt} isAlt={true} parentName={t2.name} onAct={handleAct} />
+                            </div>
+                      )}
+                        </div>
+                    }
+                    </div>);
+
+              })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>);
+
+};
+
+const NEXT_ACTIONS_DATA = {
+  'p1': [
+  { id: 1, type: 'approve', urgent: true, title: '発注先切り替えの承認', desc: 'AGT-001が東京フーズ製造への月次500本一部移管を提案。承認で¥18,400/月削減見込み。', actions: ['承認する', '却下する'] },
+  { id: 2, type: 'review', urgent: false, title: '山田食品工業 値下げ交渉結果', desc: 'AGT-001が¥172/個の最安見積を確保。次回発注から適用するか確認してください。', actions: ['適用する', '保留する'] }],
+
+  'p2': [
+  { id: 1, type: 'alert', urgent: true, title: '大阪食品OEM 価格差異の処理', desc: '請求単価¥318 vs 発注単価¥312。差額¥3,000を承認するか訂正を依頼してください。', actions: ['差額承認', '訂正依頼'] }],
+
+  'p3': [
+  { id: 1, type: 'alert', urgent: true, title: '長野食品加工 遅延対応の選択', desc: '納期3日遅延。AGT-003が代替調達先(信州食品加工)を特定。切り替えを承認しますか？', actions: ['代替先へ切替', '督促を継続'] }],
+
+  'p4': [
+  { id: 1, type: 'optimize', urgent: false, title: '発注ロット変更の承認', desc: '経済ロット(10,000個)への変更で京都豆腐工業から¥116/個を実現。月間¥12,000削減。', actions: ['変更を承認', '現状維持'] }],
+
+  'p5': [
+  { id: 1, type: 'optimize', urgent: false, title: '抹茶ロット増加の検討', desc: '西尾抹茶農園: 8,000個ロットで¥8/個削減可能。在庫許容量との兼ね合いを確認してください。', actions: ['承認する', '詳細確認'] }]
+
+};
+
+const AGENT_PERMS = [
+{ k: 'rfq', l: '見積依頼の自動送信', desc: '仕入先へのRFQメールを自律的に送信する', def: true },
+{ k: 'followup', l: '督促の自動送信', desc: '未回答仕入先への督促メールを自動送信する', def: true },
+{ k: 'negotiate', l: '価格交渉メールの送信', desc: '交渉提案メールを生成・自動送信する', def: false },
+{ k: 'confirm', l: '発注書・納品書の確認', desc: '書類の内容確認・差異を自動検出・報告する', def: true },
+{ k: 'order', l: '発注の自動実行', desc: '承認済み条件に基づいた発注を自律実行する（要閾値）', def: false }];
+
+
+const ScreenAgents = ({ tweaks, goToSettings }) => {
+  const [selectedId, setSelectedId] = useState('p1');
+  const [tab, setTab] = useState('compare');
+  const [emailConnected, setEmailConnected] = useState(() => localStorage.getItem('crft_email') === '1');
+  const [perms, setPerms] = useState(() => {
+    const saved = localStorage.getItem('crft_perms');
+    if (saved) return JSON.parse(saved);
+    return Object.fromEntries(AGENT_PERMS.map((p) => [p.k, p.def]));
+  });
+  const [threshold, setThreshold] = useState(() => parseInt(localStorage.getItem('crft_threshold') || '10000'));
+
+  useEffect(() => {localStorage.setItem('crft_email', emailConnected ? '1' : '0');}, [emailConnected]);
+  useEffect(() => {localStorage.setItem('crft_perms', JSON.stringify(perms));}, [perms]);
+  useEffect(() => {localStorage.setItem('crft_threshold', threshold);}, [threshold]);
+
+  const togglePerm = (k) => setPerms((p) => ({ ...p, [k]: !p[k] }));
+
+  // Per-agent operational state
+  const [agentStates, setAgentStates] = useState(() => {
+    const saved = localStorage.getItem('crft_agent_states');
+    if (saved) return JSON.parse(saved);
+    return {
+      p1: { state: 'running', directive: '目標削減¥20万/月。Tier1相見積を月次更新し、最安候補を提案。代替Tier2への切替は要承認。', tasks: [
+        { id: 1, title: '山田食品工業との価格交渉', status: 'in_progress', priority: 'high', due: '4/30' },
+        { id: 2, title: '東京フーズ製造の月次見積取得', status: 'pending', priority: 'med', due: '5/2' }] },
+      p2: { state: 'running', directive: '目標削減¥15万/月。九州食品センター主軸、大阪食品OEMはバックアップ運用。', tasks: [
+        { id: 1, title: '大阪食品OEM 価格差異の調査', status: 'in_progress', priority: 'high', due: '4/28' }] },
+      p3: { state: 'paused', directive: '納期遅延の代替Tier1ソーシング優先。価格交渉は一時停止。', tasks: [
+        { id: 1, title: '信州食品加工へ初回見積依頼', status: 'in_progress', priority: 'high', due: '4/29' }] },
+      p4: { state: 'running', directive: '経済ロット最適化。10,000個/月への引き上げを検証。', tasks: [
+        { id: 1, title: 'ロット変更後の在庫影響シミュレーション', status: 'pending', priority: 'med', due: '5/5' }] },
+      p5: { state: 'running', directive: '抹茶ロット拡大の交渉、品質スコアA+維持。', tasks: [
+        { id: 1, title: '西尾抹茶農園 8,000個ロット交渉', status: 'in_progress', priority: 'med', due: '5/3' }] }
+    };
+  });
+  useEffect(() => {localStorage.setItem('crft_agent_states', JSON.stringify(agentStates));}, [agentStates]);
+
+  const [editDirective, setEditDirective] = useState(false);
+  const [draftDirective, setDraftDirective] = useState('');
+  const [addingTask, setAddingTask] = useState(false);
+  const [newTask, setNewTask] = useState({ title: '', priority: 'med', due: '' });
+  const [agentToast, setAgentToast] = useState('');
+
+  const flash = (msg) => {setAgentToast(msg);setTimeout(() => setAgentToast(''), 2800);};
+  const setAgentState = (s) => {
+    setAgentStates((a) => ({ ...a, [selectedId]: { ...a[selectedId], state: s } }));
+    flash(s === 'running' ? 'エージェントを稼働再開しました' : s === 'paused' ? 'エージェントを一時停止しました' : 'エージェントを停止しました');
+  };
+  const saveDirective = () => {
+    setAgentStates((a) => ({ ...a, [selectedId]: { ...a[selectedId], directive: draftDirective } }));
+    setEditDirective(false);
+    flash('指示内容を更新しました');
+  };
+  const addTask = () => {
+    if (!newTask.title.trim()) return;
+    setAgentStates((a) => ({ ...a, [selectedId]: { ...a[selectedId], tasks: [...a[selectedId].tasks, { id: Date.now(), title: newTask.title, status: 'pending', priority: newTask.priority, due: newTask.due || '未設定' }] } }));
+    setNewTask({ title: '', priority: 'med', due: '' });
+    setAddingTask(false);
+    flash('新しいタスクをエージェントに依頼しました');
+  };
+  const removeTask = (tid) => {
+    setAgentStates((a) => ({ ...a, [selectedId]: { ...a[selectedId], tasks: a[selectedId].tasks.filter((t) => t.id !== tid) } }));
+  };
+
+  const product = PRODUCTS.find((p) => p.id === selectedId);
+  const agentMeta = agentStates[selectedId] || { state: 'running', directive: '', tasks: [] };
+  const stateLabel = { running: '稼働中', paused: '一時停止', stopped: '停止中' };
+  const stateColor = { running: 'var(--success)', paused: 'var(--warning)', stopped: 'var(--zinc-400)' };
+  const stateBg = { running: 'var(--green-50)', paused: 'var(--warning-light)', stopped: 'var(--zinc-100)' };
+  const stateBorder = { running: 'var(--green-200)', paused: '#fcd34d', stopped: 'var(--zinc-200)' };
+  const statusLabel = { active: '稼働中', negotiating: '交渉中', alert: 'アラート' };
+  const statusType = { active: 'green', negotiating: 'yellow', alert: 'red' };
+  const nextActions = NEXT_ACTIONS_DATA[selectedId] || [];
+  const agentLog = ACTIVITY.filter((a) => a.agentId === product?.agentId);
+
+  const actColor = { send: 'var(--info)', negotiate: 'var(--yellow)', alert: 'var(--error)', quote: 'var(--green-600)', optimize: 'var(--yellow)', check: 'var(--success)' };
+  const actIcon = { send: IC.arrow, negotiate: IC.refresh, alert: IC.alert, quote: IC.bar, optimize: IC.zap, check: IC.check };
+  const actLabel = { send: '見積依頼', negotiate: '価格交渉', alert: 'アラート', quote: '見積回答', optimize: '最適化提案', check: '確認完了' };
+
+  const TABS = [
+  { k: 'compare', l: '見積比較表' },
+  { k: 'detail', l: '案件詳細' },
+  { k: 'timeline', l: 'タイムライン' },
+  { k: 'next', l: '次の動き', badge: nextActions.filter((a) => a.urgent).length }];
+
+
+  return (
+    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+      {/* Sidebar */}
+      <div style={{ width: 240, borderRight: '1px solid var(--zinc-200)', background: 'white', overflowY: 'auto', flexShrink: 0 }}>
+        <div style={{ padding: '20px 18px 12px', borderBottom: '1px solid var(--zinc-100)' }}>
+          <span style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--zinc-400)' }}>商品エージェント</span>
+        </div>
+        {PRODUCTS.map((p) =>
+        <div key={p.id} onClick={() => {setSelectedId(p.id);setTab('compare');}}
+        style={{ padding: '14px 18px', borderBottom: '1px solid var(--zinc-50)', cursor: 'pointer', background: selectedId === p.id ? 'var(--green-50)' : 'transparent', borderLeft: selectedId === p.id ? '3px solid var(--green-600)' : '3px solid transparent', transition: 'all .15s' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: selectedId === p.id ? 'var(--green-700)' : 'var(--zinc-800)' }}>{p.name}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: 'var(--zinc-400)' }}>{p.variant} · {p.agentId}</span>
+              <Badge type={statusType[p.status]} size="xs">{statusLabel[p.status]}</Badge>
+            </div>
+            {(NEXT_ACTIONS_DATA[p.id] || []).filter((a) => a.urgent).length > 0 &&
+          <div style={{ marginTop: 4, fontSize: 11, color: 'var(--error)', fontWeight: 600 }}>要対応 {(NEXT_ACTIONS_DATA[p.id] || []).filter((a) => a.urgent).length}件</div>
+          }
+          </div>
+        )}
+      </div>
+
+      {/* Main */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
+        {product && <>
+          {/* Header */}
+          <div style={{ marginBottom: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--zinc-400)', marginBottom: 4 }}>{product.agentId} · {product.sku}</div>
+              <h2 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em' }}>{product.name} <span style={{ color: 'var(--zinc-400)', fontWeight: 400 }}>{product.variant}</span></h2>
+            </div>
+            <Badge type={statusType[product.status]}>{statusLabel[product.status]}</Badge>
+          </div>
+
+          {/* Agent Control Panel */}
+          <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, marginBottom: 16, overflow: 'hidden', position: 'relative' }}>
+            {agentToast &&
+              <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 10, background: 'var(--zinc-900)', color: 'white', padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 4px 10px rgba(0,0,0,.15)' }}>
+                <Icon d={IC.check} size={12} color="var(--green-400)" />{agentToast}
+              </div>
+            }
+
+            {/* Top: agent identity + state controls */}
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--zinc-100)', display: 'flex', alignItems: 'center', gap: 14, background: 'linear-gradient(to right, ' + stateBg[agentMeta.state] + ', white 60%)' }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: agentMeta.state === 'running' ? 'var(--green-600)' : agentMeta.state === 'paused' ? 'var(--warning)' : 'var(--zinc-400)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative' }}>
+                <Icon d={IC.zap} size={16} color="white" />
+                {agentMeta.state === 'running' && <span style={{ position: 'absolute', top: -2, right: -2, width: 10, height: 10, borderRadius: '50%', background: 'var(--success)', border: '2px solid white', animation: 'pulse 1.6s infinite' }} />}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--zinc-800)' }}>{product.agentId} 調達エージェント</span>
+                  <span style={{ padding: '2px 8px', borderRadius: 10, background: stateBg[agentMeta.state], border: '1px solid ' + stateBorder[agentMeta.state], fontSize: 10, fontWeight: 700, color: stateColor[agentMeta.state] }}>● {stateLabel[agentMeta.state]}</span>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--zinc-500)' }}>担当商品: {product.name} · 進行中タスク {agentMeta.tasks.filter((t) => t.status === 'in_progress').length}件 · 待機中 {agentMeta.tasks.filter((t) => t.status === 'pending').length}件</div>
+              </div>
+
+              {/* State controls */}
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                {agentMeta.state === 'running' &&
+                <>
+                    <button onClick={() => setAgentState('paused')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 7, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--zinc-700)' }}>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
+                      一時停止
+                    </button>
+                    <button onClick={() => setAgentState('stopped')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 7, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--zinc-700)' }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1" /></svg>
+                      停止
+                    </button>
+                  </>
+                }
+                {(agentMeta.state === 'paused' || agentMeta.state === 'stopped') &&
+                <button onClick={() => setAgentState('running')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l14 8-14 8z" /></svg>
+                    {agentMeta.state === 'paused' ? '再開' : '稼働開始'}
+                  </button>
+                }
+              </div>
+            </div>
+
+            {/* Directive */}
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--zinc-100)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--zinc-500)', textTransform: 'uppercase', letterSpacing: '.06em', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Icon d={IC.check} size={11} color="var(--zinc-400)" />稼働指示
+                </div>
+                {!editDirective &&
+                <button onClick={() => {setDraftDirective(agentMeta.directive);setEditDirective(true);}}
+                  style={{ fontSize: 11, color: 'var(--green-700)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, padding: '2px 6px' }}>
+                    編集
+                  </button>
+                }
+              </div>
+              {!editDirective ?
+              <p style={{ fontSize: 13, color: 'var(--zinc-700)', lineHeight: 1.6, margin: 0, padding: '10px 14px', background: 'var(--zinc-50)', borderRadius: 8, border: '1px solid var(--zinc-100)' }}>{agentMeta.directive}</p> :
+
+              <div>
+                  <textarea value={draftDirective} onChange={(e) => setDraftDirective(e.target.value)}
+                  style={{ width: '100%', minHeight: 80, padding: '10px 12px', border: '1px solid var(--green-600)', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical', lineHeight: 1.6, boxSizing: 'border-box' }} />
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
+                    <button onClick={() => setEditDirective(false)} style={{ padding: '6px 12px', background: 'white', color: 'var(--zinc-600)', border: '1px solid var(--zinc-200)', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>キャンセル</button>
+                    <button onClick={saveDirective} style={{ padding: '6px 14px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>指示を更新</button>
+                  </div>
+                </div>
+              }
+            </div>
+
+            {/* Tasks */}
+            <div style={{ padding: '14px 18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--zinc-500)', textTransform: 'uppercase', letterSpacing: '.06em', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Icon d={IC.zap} size={11} color="var(--zinc-400)" />依頼中のタスク <span style={{ color: 'var(--zinc-400)', fontWeight: 600 }}>({agentMeta.tasks.length})</span>
+                </div>
+                <button onClick={() => setAddingTask((a) => !a)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', background: addingTask ? 'var(--zinc-100)' : 'var(--green-50)', color: 'var(--green-700)', border: '1px solid var(--green-200)', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  <Icon d={addingTask ? IC.x : IC.plus} size={11} color="var(--green-700)" />{addingTask ? '閉じる' : 'タスクを依頼'}
+                </button>
+              </div>
+
+              {/* Add task form */}
+              {addingTask &&
+                <div style={{ padding: '12px 14px', background: 'var(--green-50)', border: '1px solid var(--green-200)', borderRadius: 10, marginBottom: 10 }}>
+                  <input value={newTask.title} onChange={(e) => setNewTask((t) => ({ ...t, title: e.target.value }))} placeholder="例: A社へ追加見積依頼、目標¥170/個で交渉"
+                    style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--zinc-200)', borderRadius: 7, fontSize: 13, fontFamily: 'inherit', outline: 'none', marginBottom: 8, boxSizing: 'border-box' }} />
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <select value={newTask.priority} onChange={(e) => setNewTask((t) => ({ ...t, priority: e.target.value }))}
+                      style={{ padding: '7px 10px', border: '1px solid var(--zinc-200)', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', background: 'white', cursor: 'pointer' }}>
+                      <option value="high">優先度: 高</option>
+                      <option value="med">優先度: 中</option>
+                      <option value="low">優先度: 低</option>
+                    </select>
+                    <input value={newTask.due} onChange={(e) => setNewTask((t) => ({ ...t, due: e.target.value }))} placeholder="期限 (例: 5/10)"
+                      style={{ padding: '7px 10px', border: '1px solid var(--zinc-200)', borderRadius: 7, fontSize: 12, fontFamily: 'inherit', outline: 'none', width: 120 }} />
+                    <button onClick={addTask} disabled={!newTask.title.trim()}
+                      style={{ marginLeft: 'auto', padding: '7px 16px', background: newTask.title.trim() ? 'var(--green-600)' : 'var(--zinc-300)', color: 'white', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: newTask.title.trim() ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>
+                      エージェントに依頼
+                    </button>
+                  </div>
+                </div>
+              }
+
+              {/* Task list */}
+              {agentMeta.tasks.length === 0 ?
+                <div style={{ padding: '20px', textAlign: 'center', color: 'var(--zinc-400)', fontSize: 12, background: 'var(--zinc-50)', borderRadius: 8 }}>進行中のタスクはありません</div> :
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {agentMeta.tasks.map((t) => {
+                    const pColor = t.priority === 'high' ? 'var(--error)' : t.priority === 'med' ? 'var(--warning)' : 'var(--zinc-400)';
+                    const pLabel = t.priority === 'high' ? '高' : t.priority === 'med' ? '中' : '低';
+                    const sColor = t.status === 'in_progress' ? 'var(--info)' : 'var(--zinc-400)';
+                    const sLabel = t.status === 'in_progress' ? '進行中' : '待機中';
+                    return (
+                      <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 8 }}>
+                        <div style={{ width: 4, height: 30, background: pColor, borderRadius: 2, flexShrink: 0 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--zinc-800)', marginBottom: 2 }}>{t.title}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--zinc-400)' }}>
+                            <span style={{ color: sColor, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                              {t.status === 'in_progress' && <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--info)', animation: 'pulse 1.6s infinite', display: 'inline-block' }} />}
+                              {sLabel}
+                            </span>
+                            <span style={{ color: 'var(--zinc-300)' }}>·</span>
+                            <span>優先度: <span style={{ color: pColor, fontWeight: 600 }}>{pLabel}</span></span>
+                            <span style={{ color: 'var(--zinc-300)' }}>·</span>
+                            <span>期限: {t.due}</span>
+                          </div>
+                        </div>
+                        <button onClick={() => removeTask(t.id)}
+                          style={{ padding: 6, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', borderRadius: 5 }}
+                          title="タスクを取り消す">
+                          <Icon d={IC.x} size={13} color="var(--zinc-400)" />
+                        </button>
+                      </div>);
+
+                  })}
+                </div>
+              }
+            </div>
+          </div>
+
+          {/* Stats */}
+          <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+            {[
+            { l: '今月削減額', v: `¥${(product.monthlySavings / 10000).toFixed(1)}万`, c: 'var(--green-600)' },
+            { l: '目標削減', v: `¥${(product.targetSavings / 10000).toFixed(1)}万`, c: 'var(--zinc-400)' },
+            { l: '発注頻度', v: product.orderFreq, c: 'var(--info)' },
+            { l: '比較仕入先', v: `${product.tier1.length}社`, c: 'var(--zinc-700)' },
+            { l: '要対応', v: `${nextActions.filter((a) => a.urgent).length}件`, c: nextActions.filter((a) => a.urgent).length > 0 ? 'var(--error)' : 'var(--zinc-400)' }].
+            map((s) =>
+            <div key={s.l} style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 10, padding: '12px 14px', flex: 1 }}>
+                <div style={{ fontSize: 11, color: 'var(--zinc-500)', marginBottom: 3 }}>{s.l}</div>
+                <div style={{ fontSize: 17, fontWeight: 700, color: s.c }}>{s.v}</div>
+              </div>
+            )}
+          </div>
+
+          {/* Email onboarding banner */}
+          {!emailConnected &&
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', background: 'var(--yellow-mid)', border: '1px solid #FFD601', borderRadius: 10, marginBottom: 16, gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Icon d={IC.zap} size={14} color="var(--zinc-700)" />
+                <span style={{ fontSize: 13, color: 'var(--zinc-800)' }}>AIエージェントを自律実行させるには<b>メール連携</b>が必要です</span>
+              </div>
+              <button onClick={() => goToSettings && goToSettings()} style={{ padding: '5px 14px', background: 'var(--zinc-900)', color: 'white', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>今すぐ設定</button>
+            </div>
+          }
+
+          {/* Tabs */}
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--zinc-200)', marginBottom: 18 }}>
+            {TABS.map((t) =>
+            <button key={t.k} onClick={() => setTab(t.k)}
+            style={{ padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: tab === t.k ? 600 : 400, color: tab === t.k ? 'var(--green-600)' : 'var(--zinc-500)', borderBottom: `2px solid ${tab === t.k ? 'var(--green-600)' : 'transparent'}`, marginBottom: -1, transition: 'all .15s', display: 'flex', alignItems: 'center', gap: 5 }}>
+                {t.l}
+                {t.badge > 0 && <span style={{ background: 'var(--error)', color: 'white', borderRadius: 10, fontSize: 10, fontWeight: 700, padding: '1px 5px' }}>{t.badge}</span>}
+                {t.icon && <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--warning)', display: 'inline-block' }} />}
+              </button>
+            )}
+          </div>
+
+          {/* Tab content */}
+          {tab === 'compare' && <ComparisonTable product={product} tweaks={tweaks} />}
+
+          {tab === 'detail' &&
+          <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '22px 24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, marginBottom: 20 }}>
+                {[
+              { l: '商品名', v: product.name }, { l: 'バリアント', v: product.variant },
+              { l: 'SKU', v: product.sku }, { l: 'エージェントID', v: product.agentId },
+              { l: '発注頻度', v: product.orderFreq }, { l: 'Tier1仕入先数', v: `${product.tier1.length}社` },
+              { l: '今月削減額', v: `¥${product.monthlySavings.toLocaleString()}` }, { l: '年間削減目標', v: `¥${(product.targetSavings * 12).toLocaleString()}` }].
+              map((f) =>
+              <div key={f.l}>
+                    <div style={{ fontSize: 11, color: 'var(--zinc-400)', marginBottom: 3 }}>{f.l}</div>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--zinc-800)' }}>{f.v}</div>
+                  </div>
+              )}
+              </div>
+              <div style={{ paddingTop: 16, borderTop: '1px solid var(--zinc-100)' }}>
+                <div style={{ fontSize: 11, color: 'var(--zinc-400)', marginBottom: 8 }}>Tier1 仕入先</div>
+                {product.tier1.map((t1) =>
+              <div key={t1.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--zinc-50)', borderRadius: 8, marginBottom: 6, border: '1px solid var(--zinc-200)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Badge type="primary" size="xs">Tier1</Badge>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{t1.name}</span>
+                      <span style={{ fontSize: 11, color: 'var(--zinc-400)' }}>{t1.location}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                      <span style={{ fontSize: 11, color: 'var(--yellow)', fontWeight: 700 }}>★{t1.rating}</span>
+                      <span style={{ fontSize: 12, fontWeight: 700 }}>¥{t1.currentPrice}/個</span>
+                      <span style={{ fontSize: 11, color: 'var(--zinc-400)' }}>{t1.leadTime}</span>
+                    </div>
+                  </div>
+              )}
+              </div>
+            </div>
+          }
+
+          {tab === 'timeline' &&
+          <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '20px 24px' }}>
+              {agentLog.length === 0 ?
+            <div style={{ textAlign: 'center', color: 'var(--zinc-400)', padding: '24px' }}>履歴なし</div> :
+            agentLog.map((a, i) =>
+            <div key={a.id} style={{ display: 'flex', gap: 14, paddingBottom: i < agentLog.length - 1 ? 20 : 0, position: 'relative' }}>
+                  {i < agentLog.length - 1 && <div style={{ position: 'absolute', left: 13, top: 28, bottom: 0, width: 1, background: 'var(--zinc-100)' }} />}
+                  <div style={{ width: 27, height: 27, borderRadius: 7, background: actColor[a.type] + '18', border: `1px solid ${actColor[a.type]}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, zIndex: 1 }}>
+                    <Icon d={actIcon[a.type] || IC.zap} size={13} color={actColor[a.type]} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: actColor[a.type] }}>{actLabel[a.type]}</span>
+                      <span style={{ fontSize: 11, color: 'var(--zinc-400)' }}>{a.time}</span>
+                    </div>
+                    <p style={{ fontSize: 13, color: 'var(--zinc-700)', lineHeight: 1.5 }}>{a.action}</p>
+                    {a.impact && tweaks.showSavings &&
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--green-600)', display: 'block', marginTop: 2 }}>▲ ¥{a.impact.toLocaleString()} 削減</span>
+                }
+                  </div>
+                </div>
+            )}
+            </div>
+          }
+
+          {tab === 'next' &&
+          <div>
+              {nextActions.length === 0 ?
+            <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '32px', textAlign: 'center', color: 'var(--zinc-400)' }}>対応が必要な動きはありません</div> :
+            nextActions.map((a) =>
+            <div key={a.id} style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '18px 22px', marginBottom: 12, borderLeft: `4px solid ${a.type === 'alert' ? 'var(--error)' : a.type === 'approve' ? 'var(--green-600)' : 'var(--yellow)'}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--zinc-900)' }}>{a.title}</span>
+                    {a.urgent && <Badge type="red" size="xs">要対応</Badge>}
+                  </div>
+                  <p style={{ fontSize: 13, color: 'var(--zinc-600)', lineHeight: 1.5, marginBottom: 14 }}>{a.desc}</p>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button style={{ padding: '7px 16px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>{a.actions[0]}</button>
+                    <button style={{ padding: '7px 16px', background: 'white', color: 'var(--zinc-600)', border: '1px solid var(--zinc-200)', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>{a.actions[1]}</button>
+                  </div>
+                </div>
+            )}
+            </div>
+          }
+
+        </>}
+      </div>
+    </div>);
+
+};
+
+
+// ─── SCREEN: SETTINGS (global) ──────────────────────────────────
+const DEFAULT_TEMPLATES = {
+  rfq: {
+    name: '見積依頼メール',
+    desc: 'エージェントが新規仕入先や既存仕入先へ見積を依頼する際に使用',
+    subject: '【{{商品名}}】お見積依頼のお願い',
+    body: `{{仕入先名}}\nご担当者様\n\nいつもお世話になっております。{{自社名}}の調達担当AIエージェントです。\n\n下記商品につきまして、お見積のご提示をお願いいたします。\n\n■ 商品: {{商品名}} / {{バリアント}}\n■ 数量: {{数量}}個\n■ 希望納期: {{納期}}\n■ 回答期限: {{回答期限}}\n\nご不明な点がございましたらお気軽にお問い合わせください。\n何卒よろしくお願いいたします。`,
+    tokens: ['自社名', '仕入先名', '商品名', 'バリアント', '数量', '納期', '回答期限']
+  },
+  followup: {
+    name: '督促メール',
+    desc: '見積回答・納期回答が期限を過ぎた仕入先へ送信',
+    subject: '【{{商品名}}】お見積のご進捗について',
+    body: `{{仕入先名}}\nご担当者様\n\nお世話になっております。{{自社名}}の調達担当AIエージェントです。\n\n先日ご依頼させていただいたお見積（商品: {{商品名}}、回答期限: {{回答期限}}）について、まだご回答をいただけておりません。\n\nご状況のご連絡をいただけますと幸いです。\n\nお忙しいところ恐れ入りますが、何卒よろしくお願いいたします。`,
+    tokens: ['自社名', '仕入先名', '商品名', '回答期限']
+  },
+  negotiate: {
+    name: '価格交渉メール',
+    desc: '相見積結果や目標価格との乖離がある場合に送信',
+    subject: '【{{商品名}}】お見積価格のご相談',
+    body: `{{仕入先名}}\nご担当者様\n\nお世話になっております。{{自社名}}の調達担当AIエージェントです。\n\nご提示いただきました{{商品名}}のお見積価格（¥{{現在価格}}/個）につきまして、目標価格 ¥{{目標価格}}/個 でのご検討をお願いできないでしょうか。\n\n数量調整や発注頻度の見直しなど、条件面でのご相談も可能です。\nご検討のほどよろしくお願いいたします。`,
+    tokens: ['自社名', '仕入先名', '商品名', '現在価格', '目標価格']
+  },
+  po: {
+    name: '発注書送付メール',
+    desc: '承認済み条件で仕入先へ発注する際に送信',
+    subject: '【{{商品名}}】発注書送付（{{発注番号}}）',
+    body: `{{仕入先名}}\nご担当者様\n\nお世話になっております。{{自社名}}です。\n\n下記の通り正式発注をさせていただきます。発注書を添付いたしますのでご確認ください。\n\n■ 発注番号: {{発注番号}}\n■ 商品: {{商品名}}\n■ 数量: {{数量}}個\n■ 単価: ¥{{単価}}/個\n■ 納期: {{納期}}\n\nご質問等ございましたらお気軽にご連絡ください。\n何卒よろしくお願いいたします。`,
+    tokens: ['自社名', '仕入先名', '商品名', '発注番号', '数量', '単価', '納期']
+  }
+};
+
+const AGENT_PERMS_FULL = [
+{ k: 'rfq', l: '見積依頼の自動送信', desc: '仕入先へのRFQメールを自律的に送信する', def: true },
+{ k: 'followup', l: '督促の自動送信', desc: '未回答仕入先への督促メールを自動送信する', def: true },
+{ k: 'negotiate', l: '価格交渉メールの送信', desc: '交渉提案メールを生成・自動送信する', def: false },
+{ k: 'confirm', l: '発注書・納品書の確認', desc: '書類の内容確認・差異を自動検出・報告する', def: true },
+{ k: 'order', l: '発注の自動実行', desc: '承認済み条件に基づいた発注を自律実行する（要閾値）', def: false }];
+
+
+const ScreenSettings = () => {
+  const [section, setSection] = useState('agent');
+
+  // Agent settings state
+  const [emailConnected, setEmailConnected] = useState(() => localStorage.getItem('crft_email') === '1');
+  const [perms, setPerms] = useState(() => {
+    const saved = localStorage.getItem('crft_perms');
+    if (saved) return JSON.parse(saved);
+    return Object.fromEntries(AGENT_PERMS_FULL.map((p) => [p.k, p.def]));
+  });
+  const [threshold, setThreshold] = useState(() => parseInt(localStorage.getItem('crft_threshold') || '10000'));
+  useEffect(() => {localStorage.setItem('crft_email', emailConnected ? '1' : '0');}, [emailConnected]);
+  useEffect(() => {localStorage.setItem('crft_perms', JSON.stringify(perms));}, [perms]);
+  useEffect(() => {localStorage.setItem('crft_threshold', threshold);}, [threshold]);
+  const togglePerm = (k) => setPerms((p) => ({ ...p, [k]: !p[k] }));
+
+  // Template state
+  const [templates, setTemplates] = useState(() => {
+    const saved = localStorage.getItem('crft_templates');
+    return saved ? JSON.parse(saved) : DEFAULT_TEMPLATES;
+  });
+  const [activeTpl, setActiveTpl] = useState('rfq');
+  const [draft, setDraft] = useState(null);
+  const [toast, setToast] = useState('');
+  useEffect(() => {localStorage.setItem('crft_templates', JSON.stringify(templates));}, [templates]);
+  useEffect(() => {setDraft(null);}, [activeTpl]);
+  const currentTpl = templates[activeTpl];
+  const editingSubject = draft?.subject ?? currentTpl.subject;
+  const editingBody = draft?.body ?? currentTpl.body;
+  const isDirty = draft !== null;
+  const saveTpl = () => {
+    setTemplates((t) => ({ ...t, [activeTpl]: { ...t[activeTpl], subject: editingSubject, body: editingBody } }));
+    setDraft(null);
+    setToast('テンプレートを保存しました');
+    setTimeout(() => setToast(''), 2400);
+  };
+  const resetTpl = () => {
+    setTemplates((t) => ({ ...t, [activeTpl]: DEFAULT_TEMPLATES[activeTpl] }));
+    setDraft(null);
+    setToast('初期テンプレートに戻しました');
+    setTimeout(() => setToast(''), 2400);
+  };
+  const insertToken = (tok) => {
+    setDraft((d) => ({
+      subject: d?.subject ?? currentTpl.subject,
+      body: (d?.body ?? currentTpl.body) + `{{${tok}}}`
+    }));
+  };
+
+  // Guideline state
+  const [guide, setGuide] = useState(() => {
+    const saved = localStorage.getItem('crft_guide');
+    return saved ? JSON.parse(saved) : {
+      costRate: 42, // target COGS %
+      costRateTolerance: 3, // allowed +/- pp
+      alertLeadTime: 5, // days lead time alert
+      alertPriceRise: 3, // % price rise alert
+      paymentTerm: 60, // days
+      minSuppliers: 3,
+      mustHaveISO: true,
+      mustHaveHACCP: true,
+      preferDomestic: false,
+      excludeRegions: '',
+      notes: ''
+    };
+  });
+  useEffect(() => {localStorage.setItem('crft_guide', JSON.stringify(guide));}, [guide]);
+  const setG = (k, v) => setGuide((g) => ({ ...g, [k]: v }));
+
+  const SECTIONS = [
+  { k: 'agent', l: 'エージェント設定', icon: IC.zap, desc: 'メール連携と自律実行の許可' },
+  { k: 'template', l: 'メールテンプレート', icon: IC.arrow, desc: 'エージェントの送信文面を編集' },
+  { k: 'guide', l: 'ガイドライン', icon: IC.check, desc: '調達基準・原価率・監視基準' }];
+
+
+  return (
+    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+      {/* Left nav */}
+      <div style={{ width: 240, borderRight: '1px solid var(--zinc-200)', background: 'white', overflowY: 'auto', flexShrink: 0, padding: '18px 12px' }}>
+        <div style={{ padding: '4px 10px 14px', fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--zinc-400)' }}>設定</div>
+        {SECTIONS.map((s) =>
+        <button key={s.k} onClick={() => setSection(s.k)}
+        style={{ width: '100%', textAlign: 'left', display: 'flex', gap: 10, padding: '11px 12px', borderRadius: 10, border: 'none', background: section === s.k ? 'var(--green-50)' : 'transparent', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 3, alignItems: 'flex-start' }}>
+            <div style={{ width: 30, height: 30, borderRadius: 8, background: section === s.k ? 'var(--green-600)' : 'var(--zinc-100)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Icon d={s.icon} size={14} color={section === s.k ? 'white' : 'var(--zinc-500)'} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: section === s.k ? 600 : 500, color: section === s.k ? 'var(--green-700)' : 'var(--zinc-800)', marginBottom: 2 }}>{s.l}</div>
+              <div style={{ fontSize: 11, color: 'var(--zinc-400)', lineHeight: 1.4 }}>{s.desc}</div>
+            </div>
+          </button>
+        )}
+      </div>
+
+      {/* Main */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '28px 36px', position: 'relative' }}>
+        {/* Toast */}
+        {toast &&
+        <div style={{ position: 'absolute', top: 20, right: 24, background: 'var(--zinc-900)', color: 'white', padding: '10px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8, zIndex: 100, boxShadow: '0 4px 12px rgba(0,0,0,.15)' }}>
+            <Icon d={IC.check} size={14} color="var(--green-400)" />{toast}
+          </div>
+        }
+
+        {section === 'agent' &&
+        <div style={{ maxWidth: 720 }}>
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--zinc-400)', marginBottom: 4 }}>AGENT SETTINGS</div>
+              <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.01em', marginBottom: 6 }}>エージェント設定</h2>
+              <p style={{ fontSize: 13, color: 'var(--zinc-500)', lineHeight: 1.6 }}>AIエージェントがどこまで自律的に動くかを設定します。ここで許可されていないアクションは必ず承認を求めます。</p>
+            </div>
+
+            {/* Email connection */}
+            <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '22px 26px', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,214,1,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Icon d={IC.zap} size={16} color="#C79900" />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 3 }}>メール連携</div>
+                  <p style={{ fontSize: 12, color: 'var(--zinc-500)', lineHeight: 1.6 }}>メールアカウントを連携すると、エージェントが仕入先への見積依頼・督促・交渉メールを代行します。</p>
+                </div>
+                {emailConnected && <Badge type="green" size="sm">連携済み</Badge>}
+              </div>
+              {!emailConnected ?
+            <div style={{ display: 'flex', gap: 10 }}>
+                  {[{ l: 'Gmailで連携', c: '#EA4335' }, { l: 'Outlookで連携', c: '#0078D4' }].map((m) =>
+              <button key={m.l} onClick={() => setEmailConnected(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 20px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 10, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s' }}
+              onMouseEnter={(e) => {e.currentTarget.style.borderColor = m.c;e.currentTarget.style.background = m.c + '08';}}
+              onMouseLeave={(e) => {e.currentTarget.style.borderColor = 'var(--zinc-200)';e.currentTarget.style.background = 'white';}}>
+                      <span style={{ width: 12, height: 12, borderRadius: '50%', background: m.c, flexShrink: 0 }} />{m.l}
+                    </button>
+              )}
+                </div> :
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'var(--green-50)', border: '1px solid var(--green-200)', borderRadius: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <Icon d={IC.check} size={15} color="var(--green-600)" />
+                    <div>
+                      <div style={{ fontSize: 13, color: 'var(--green-700)', fontWeight: 600 }}>procurement@crft.co.jp</div>
+                      <div style={{ fontSize: 11, color: 'var(--zinc-500)' }}>Gmail で連携中 · エージェントの自律実行が有効です</div>
+                    </div>
+                  </div>
+                  <button onClick={() => setEmailConnected(false)} style={{ fontSize: 12, color: 'var(--zinc-500)', background: 'white', border: '1px solid var(--zinc-200)', padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit' }}>連携解除</button>
+                </div>
+            }
+            </div>
+
+            {/* Permissions */}
+            <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '22px 26px', marginBottom: 14, opacity: emailConnected ? 1 : .55 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>自律実行の許可</div>
+              <p style={{ fontSize: 12, color: 'var(--zinc-500)', marginBottom: 16, lineHeight: 1.6 }}>OFFのアクションは「次の動き」タブに承認待ちとして表示されます。</p>
+              {AGENT_PERMS_FULL.map((p, i) =>
+            <div key={p.k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 0', borderTop: i === 0 ? 'none' : '1px solid var(--zinc-100)' }}>
+                  <div style={{ flex: 1, marginRight: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--zinc-800)', marginBottom: 2 }}>{p.l}</div>
+                    <div style={{ fontSize: 11, color: 'var(--zinc-400)' }}>{p.desc}</div>
+                  </div>
+                  <button onClick={() => emailConnected && togglePerm(p.k)} style={{ width: 44, height: 24, borderRadius: 12, border: 'none', background: perms[p.k] ? 'var(--green-600)' : 'var(--zinc-300)', cursor: emailConnected ? 'pointer' : 'not-allowed', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
+                    <span style={{ position: 'absolute', top: 3, left: perms[p.k] ? 23 : 3, width: 18, height: 18, borderRadius: '50%', background: 'white', transition: 'left .2s', display: 'block', boxShadow: '0 1px 2px rgba(0,0,0,.15)' }} />
+                  </button>
+                </div>
+            )}
+            </div>
+
+            {/* Threshold */}
+            <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '22px 26px', opacity: emailConnected ? 1 : .55 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>自動承認の閾値</div>
+              <p style={{ fontSize: 12, color: 'var(--zinc-500)', marginBottom: 18, lineHeight: 1.6 }}>この金額以下の価格差異はエージェントが自動承認します。超過する場合は「次の動き」で確認を求めます。</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <input type="range" min={0} max={100000} step={1000} value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} disabled={!emailConnected} style={{ flex: 1, accentColor: 'var(--green-600)' }} />
+                <div style={{ padding: '8px 16px', background: 'var(--green-50)', border: '1px solid var(--green-200)', borderRadius: 8, fontSize: 16, fontWeight: 700, minWidth: 110, textAlign: 'center', color: 'var(--green-700)' }}>¥{threshold.toLocaleString()}</div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--zinc-400)', marginTop: 6 }}>
+                <span>¥0 — すべて確認する</span><span>¥100,000 — 大きく自動化</span>
+              </div>
+            </div>
+          </div>
+        }
+
+        {section === 'template' &&
+        <div style={{ maxWidth: 960 }}>
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--zinc-400)', marginBottom: 4 }}>EMAIL TEMPLATES</div>
+              <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.01em', marginBottom: 6 }}>メールテンプレート</h2>
+              <p style={{ fontSize: 13, color: 'var(--zinc-500)', lineHeight: 1.6 }}>エージェントが仕入先へ送るメール文面を編集できます。<code style={{ background: 'var(--zinc-100)', padding: '1px 6px', borderRadius: 4, fontSize: 12, fontFamily: 'ui-monospace,monospace' }}>{'{{変数}}'}</code> は送信時に自動で置き換わります。</p>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 16 }}>
+              {/* Template list */}
+              <div>
+                {Object.entries(templates).map(([k, t]) =>
+              <button key={k} onClick={() => {
+                if (isDirty && !confirm('編集中の変更は破棄されます。よろしいですか?')) return;
+                setActiveTpl(k);
+              }}
+              style={{ width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 10, border: `1px solid ${activeTpl === k ? 'var(--green-600)' : 'var(--zinc-200)'}`, background: activeTpl === k ? 'var(--green-50)' : 'white', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 8, transition: 'all .15s' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: activeTpl === k ? 'var(--green-700)' : 'var(--zinc-800)', marginBottom: 3 }}>{t.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--zinc-500)', lineHeight: 1.4 }}>{t.desc}</div>
+                  </button>
+              )}
+              </div>
+
+              {/* Editor */}
+              <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '22px 26px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 600 }}>{currentTpl.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--zinc-500)' }}>{currentTpl.desc}</div>
+                  </div>
+                  {isDirty && <Badge type="yellow" size="sm">未保存の変更</Badge>}
+                </div>
+
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--zinc-500)', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 6 }}>件名</label>
+                  <input value={editingSubject} onChange={(e) => setDraft({ subject: e.target.value, body: editingBody })}
+                style={{ width: '100%', padding: '10px 14px', border: '1px solid var(--zinc-200)', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', transition: 'border-color .15s' }}
+                onFocus={(e) => e.currentTarget.style.borderColor = 'var(--green-600)'}
+                onBlur={(e) => e.currentTarget.style.borderColor = 'var(--zinc-200)'} />
+                </div>
+
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--zinc-500)', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 6 }}>本文</label>
+                  <textarea value={editingBody} onChange={(e) => setDraft({ subject: editingSubject, body: e.target.value })}
+                style={{ width: '100%', minHeight: 260, padding: '12px 14px', border: '1px solid var(--zinc-200)', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical', lineHeight: 1.7, transition: 'border-color .15s' }}
+                onFocus={(e) => e.currentTarget.style.borderColor = 'var(--green-600)'}
+                onBlur={(e) => e.currentTarget.style.borderColor = 'var(--zinc-200)'} />
+                </div>
+
+                {/* Token chips */}
+                <div style={{ marginBottom: 18 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--zinc-500)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>クリックで変数を挿入</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {currentTpl.tokens.map((tok) =>
+                  <button key={tok} onClick={() => insertToken(tok)}
+                  style={{ padding: '5px 11px', background: 'var(--zinc-50)', border: '1px solid var(--zinc-200)', borderRadius: 6, fontSize: 11, fontFamily: 'ui-monospace,monospace', color: 'var(--zinc-700)', cursor: 'pointer', transition: 'all .15s' }}
+                  onMouseEnter={(e) => {e.currentTarget.style.background = 'var(--green-50)';e.currentTarget.style.borderColor = 'var(--green-600)';e.currentTarget.style.color = 'var(--green-700)';}}
+                  onMouseLeave={(e) => {e.currentTarget.style.background = 'var(--zinc-50)';e.currentTarget.style.borderColor = 'var(--zinc-200)';e.currentTarget.style.color = 'var(--zinc-700)';}}>
+                        {'{{' + tok + '}}'}
+                      </button>
+                  )}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, borderTop: '1px solid var(--zinc-100)' }}>
+                  <button onClick={resetTpl} style={{ fontSize: 12, color: 'var(--zinc-500)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' }}>初期テンプレートに戻す</button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {isDirty &&
+                  <button onClick={() => setDraft(null)} style={{ padding: '8px 16px', background: 'white', color: 'var(--zinc-600)', border: '1px solid var(--zinc-200)', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>キャンセル</button>
+                  }
+                    <button onClick={saveTpl} disabled={!isDirty}
+                  style={{ padding: '8px 18px', background: isDirty ? 'var(--green-600)' : 'var(--zinc-200)', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: isDirty ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>
+                      保存する
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        }
+
+        {section === 'guide' &&
+        <div style={{ maxWidth: 860 }}>
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--zinc-400)', marginBottom: 4 }}>GUIDELINES</div>
+              <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.01em', marginBottom: 6 }}>ガイドライン</h2>
+              <p style={{ fontSize: 13, color: 'var(--zinc-500)', lineHeight: 1.6 }}>エージェントが自律的に判断する際の基準です。各商品・仕入先の評価、アラート発生、交渉優先度の根拠として使われます。</p>
+            </div>
+
+            {/* Cost rate */}
+            <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '22px 26px', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 18 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--green-50)', border: '1px solid var(--green-200)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Icon d={IC.bar} size={14} color="var(--green-600)" />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 3 }}>原価率の目標・許容幅</div>
+                  <p style={{ fontSize: 12, color: 'var(--zinc-500)', lineHeight: 1.5 }}>全体の目標原価率と、どこまで上振れを許容するかを設定します。超過するとエージェントが警告・再交渉を提案します。</p>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <GuideSlider label="目標原価率" value={guide.costRate} setValue={(v) => setG('costRate', v)} min={20} max={70} step={1} suffix="%" color="var(--green-600)" />
+                <GuideSlider label="許容幅 (±)" value={guide.costRateTolerance} setValue={(v) => setG('costRateTolerance', v)} min={0} max={10} step={0.5} suffix="pp" color="var(--warning)" />
+              </div>
+
+              <div style={{ marginTop: 14, padding: '12px 14px', background: 'var(--green-50)', border: '1px solid var(--green-200)', borderRadius: 8, fontSize: 12, color: 'var(--green-700)', lineHeight: 1.6 }}>
+                <strong>許容レンジ:</strong> {(guide.costRate - guide.costRateTolerance).toFixed(1)}% 〜 {(guide.costRate + guide.costRateTolerance).toFixed(1)}% <span style={{ color: 'var(--zinc-500)' }}>超過するとアラートが発生します</span>
+              </div>
+            </div>
+
+            {/* Monitoring */}
+            <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '22px 26px', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 18 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--warning-light)', border: '1px solid #fcd34d', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Icon d={IC.alert} size={14} color="var(--warning)" />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 3 }}>監視基準</div>
+                  <p style={{ fontSize: 12, color: 'var(--zinc-500)', lineHeight: 1.5 }}>これらを超えるとエージェントが自動でアラートを発報します。</p>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <GuideSlider label="納期遅延のアラート閾値" value={guide.alertLeadTime} setValue={(v) => setG('alertLeadTime', v)} min={1} max={14} step={1} suffix="日" color="var(--error)" />
+                <GuideSlider label="価格上昇のアラート閾値" value={guide.alertPriceRise} setValue={(v) => setG('alertPriceRise', v)} min={1} max={20} step={0.5} suffix="%" color="var(--error)" />
+              </div>
+            </div>
+
+            {/* Procurement standards */}
+            <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '22px 26px', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 18 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--info-light)', border: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Icon d={IC.check} size={14} color="var(--info)" />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 3 }}>調達基準</div>
+                  <p style={{ fontSize: 12, color: 'var(--zinc-500)', lineHeight: 1.5 }}>新規仕入先を評価・採用する際の基準です。</p>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+                <GuideSlider label="最低取引先数" value={guide.minSuppliers} setValue={(v) => setG('minSuppliers', v)} min={1} max={10} step={1} suffix="社" color="var(--info)" hint="1商品あたり確保する仕入先の下限" />
+                <GuideSlider label="希望支払サイト" value={guide.paymentTerm} setValue={(v) => setG('paymentTerm', v)} min={15} max={120} step={15} suffix="日" color="var(--info)" hint="月末締め翌月末払い=60日" />
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--zinc-500)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>必須要件</div>
+                <GuideCheck label="ISO認証 (ISO 9001など) の取得" checked={guide.mustHaveISO} onChange={(v) => setG('mustHaveISO', v)} />
+                <GuideCheck label="HACCP認証の取得" checked={guide.mustHaveHACCP} onChange={(v) => setG('mustHaveHACCP', v)} />
+                <GuideCheck label="国内生産を優先する" checked={guide.preferDomestic} onChange={(v) => setG('preferDomestic', v)} />
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--zinc-500)', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 6 }}>除外したい地域・事業者</label>
+                <input value={guide.excludeRegions} onChange={(e) => setG('excludeRegions', e.target.value)} placeholder="例: 特定地域、競合A社のグループ企業 など"
+              style={{ width: '100%', padding: '10px 14px', border: '1px solid var(--zinc-200)', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none' }}
+              onFocus={(e) => e.currentTarget.style.borderColor = 'var(--green-600)'}
+              onBlur={(e) => e.currentTarget.style.borderColor = 'var(--zinc-200)'} />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--zinc-500)', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 6 }}>自由記述メモ</label>
+                <textarea value={guide.notes} onChange={(e) => setG('notes', e.target.value)} placeholder="例: 新商品開発の際は既存Tier1優先。売上¥100万以下の案件はTier2含めて比較など、エージェントに伝えたい運用ルールを記載"
+              style={{ width: '100%', minHeight: 100, padding: '12px 14px', border: '1px solid var(--zinc-200)', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', outline: 'none', resize: 'vertical', lineHeight: 1.6 }}
+              onFocus={(e) => e.currentTarget.style.borderColor = 'var(--green-600)'}
+              onBlur={(e) => e.currentTarget.style.borderColor = 'var(--zinc-200)'} />
+              </div>
+            </div>
+
+            <div style={{ padding: '14px 18px', background: 'var(--zinc-50)', borderRadius: 10, fontSize: 12, color: 'var(--zinc-500)', lineHeight: 1.6, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <Icon d={IC.check} size={14} color="var(--green-600)" />
+              <div>ガイドラインは自動保存されます。変更は次回のエージェント稼働時から反映されます。</div>
+            </div>
+          </div>
+        }
+      </div>
+    </div>);
+
+};
+
+// Reusable controls for settings
+const GuideSlider = ({ label, value, setValue, min, max, step, suffix, color, hint }) =>
+<div>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--zinc-700)' }}>{label}</label>
+      <span style={{ fontSize: 18, fontWeight: 700, color: color || 'var(--zinc-800)', fontFamily: 'Futura,sans-serif' }}>{value}<span style={{ fontSize: 11, color: 'var(--zinc-500)', marginLeft: 3, fontFamily: 'Noto Sans JP,sans-serif' }}>{suffix}</span></span>
+    </div>
+    <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => setValue(Number(e.target.value))}
+  style={{ width: '100%', accentColor: color || 'var(--green-600)' }} />
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--zinc-400)', marginTop: 2 }}>
+      <span>{min}{suffix}</span><span>{max}{suffix}</span>
+    </div>
+    {hint && <div style={{ fontSize: 11, color: 'var(--zinc-400)', marginTop: 4 }}>{hint}</div>}
+  </div>;
+
+
+const GuideCheck = ({ label, checked, onChange }) =>
+<div onClick={() => onChange(!checked)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', cursor: 'pointer', borderBottom: '1px solid var(--zinc-50)' }}>
+    <div style={{ width: 20, height: 20, borderRadius: 5, border: `1.5px solid ${checked ? 'var(--green-600)' : 'var(--zinc-300)'}`, background: checked ? 'var(--green-600)' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s' }}>
+      {checked && <Icon d={IC.check} size={11} color="white" />}
+    </div>
+    <span style={{ fontSize: 13, color: 'var(--zinc-700)' }}>{label}</span>
+  </div>;
+
+
+
+
+// ─── SCREEN: COST IMPROVEMENT ─────────────────────────────────────
+const ScreenCost = ({ tweaks }) => {
+  const [selId, setSelId] = useState('p1');
+  const [selT1, setSelT1] = useState(null);
+  const [detailFactory, setDetailFactory] = useState(null);
+  const [selected, setSelected] = useState([]);
+  const product = PRODUCTS.find((p) => p.id === selId);
+  useEffect(() => {setSelT1(product?.tier1[0]?.id || null);}, [selId]);
+  const t1 = product?.tier1.find((t) => t.id === selT1) || product?.tier1[0];
+
+  return (
+    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+      {/* Left panel */}
+      <div style={{ width: 220, borderRight: '1px solid var(--zinc-200)', background: 'white', overflowY: 'auto', flexShrink: 0 }}>
+        <div style={{ padding: '20px 18px 12px', borderBottom: '1px solid var(--zinc-100)' }}>
+          <span style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--zinc-400)' }}>商品選択</span>
+        </div>
+        {PRODUCTS.map((p) =>
+        <div key={p.id} onClick={() => setSelId(p.id)}
+        style={{ padding: '12px 18px', borderBottom: '1px solid var(--zinc-50)', cursor: 'pointer', background: selId === p.id ? 'var(--green-50)' : 'transparent', borderLeft: selId === p.id ? '3px solid var(--green-600)' : '3px solid transparent' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2, color: selId === p.id ? 'var(--green-700)' : 'var(--zinc-800)' }}>{p.name}</div>
+            <div style={{ fontSize: 11, color: 'var(--zinc-400)' }}>{p.variant}</div>
+            {tweaks.showSavings && p.monthlySavings > 0 &&
+          <div style={{ fontSize: 11, color: 'var(--green-600)', fontWeight: 700, marginTop: 3 }}>▲ ¥{(p.monthlySavings / 10000).toFixed(1)}万/月</div>
+          }
+          </div>
+        )}
+      </div>
+
+      {/* Main */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px' }}>
+        {product && <>
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--zinc-400)', marginBottom: 4 }}>原価改善 ANALYSIS</div>
+            <h2 style={{ fontSize: 20, fontWeight: 700 }}>{product.name} <span style={{ color: 'var(--zinc-400)', fontWeight: 400 }}>{product.variant}</span></h2>
+          </div>
+
+          {/* Tier1 tabs */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+            {product.tier1.map((t) =>
+            <button key={t.id} onClick={() => setSelT1(t.id)}
+            style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${selT1 === t.id ? 'var(--green-600)' : 'var(--zinc-200)'}`, background: selT1 === t.id ? 'var(--green-600)' : 'white', color: selT1 === t.id ? 'white' : 'var(--zinc-700)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+                {t.name}
+              </button>
+            )}
+          </div>
+
+          {t1 && <>
+            {/* Quote comparison */}
+            <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '20px 24px', marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Icon d={IC.bar} size={14} color="var(--green-600)" />
+                仕入先別・相見積比較
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 3, marginBottom: 16 }}>
+                {[
+                { label: '現行単価', val: `¥${t1.currentPrice}`, sub: '税抜/個', highlight: false },
+                { label: '最安値見積', val: `¥${t1.bestQuote}`, sub: t1.bestQuote < t1.currentPrice ? `¥${t1.currentPrice - t1.bestQuote}削減可能` : '同一', highlight: t1.bestQuote < t1.currentPrice },
+                { label: '削減率', val: t1.bestQuote < t1.currentPrice ? `${((t1.currentPrice - t1.bestQuote) / t1.currentPrice * 100).toFixed(1)}%` : '0%', sub: 'コスト最適化余地', highlight: false }].
+                map((item) =>
+                <div key={item.label} style={{ padding: '16px', background: item.highlight ? 'var(--green-50)' : 'var(--zinc-50)', borderRadius: 10, border: `1px solid ${item.highlight ? 'var(--green-200)' : 'var(--zinc-200)'}` }}>
+                    <div style={{ fontSize: 11, color: item.highlight ? 'var(--green-600)' : 'var(--zinc-400)', marginBottom: 6 }}>{item.label}</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: item.highlight ? 'var(--green-700)' : 'var(--zinc-800)' }}>{item.val}</div>
+                    <div style={{ fontSize: 11, color: item.highlight ? 'var(--green-500)' : 'var(--zinc-400)', marginTop: 2 }}>{item.sub}</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Lot pricing table */}
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--zinc-500)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.06em' }}>発注ロット別単価</div>
+              <div style={{ border: '1px solid var(--zinc-200)', borderRadius: 8, overflow: 'hidden' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', background: 'var(--zinc-50)', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--zinc-500)' }}>
+                  <span>ロット数量</span><span>単価</span><span>月間削減額試算</span>
+                </div>
+                {t1.lots.map((l, i) =>
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', padding: '10px 14px', borderTop: '1px solid var(--zinc-100)', background: i === t1.lots.length - 1 ? 'var(--green-50)' : 'white', fontSize: 13 }}>
+                    <span style={{ color: 'var(--zinc-700)' }}>{l.qty.toLocaleString()}個</span>
+                    <span style={{ fontWeight: 600, color: i === t1.lots.length - 1 ? 'var(--green-700)' : 'var(--zinc-800)' }}>¥{l.price}</span>
+                    <span style={{ color: i === t1.lots.length - 1 ? 'var(--green-600)' : 'var(--zinc-400)', fontSize: 12 }}>
+                      {i === 0 ? 'ベースライン' : `▲ ¥${((t1.lots[0].price - l.price) * l.qty / 10000 * 2).toFixed(0)}万`}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Tier2 cost breakdown */}
+            <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '20px 24px', marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Icon d={IC.package} size={14} color="var(--info)" />
+                Tier2 原材料コスト内訳
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {t1.tier2.map((t2) => {
+                  const pct = Math.round(t2.price / (t1.currentPrice * 0.6) * 100);
+                  return (
+                    <div key={t2.name} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <span style={{ fontSize: 13, minWidth: 130, color: 'var(--zinc-700)' }}>{t2.name}</span>
+                      <span style={{ fontSize: 11, color: 'var(--zinc-400)', minWidth: 60 }}>{t2.role}</span>
+                      <div style={{ flex: 1, height: 8, background: 'var(--zinc-100)', borderRadius: 4, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', background: 'var(--green-400)', borderRadius: 4, width: `${Math.min(pct, 100)}%` }} />
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 600, minWidth: 70, textAlign: 'right', color: 'var(--zinc-800)' }}>¥{t2.price}/{t2.unit}</span>
+                    </div>);
+
+                })}
+              </div>
+            </div>
+
+            {/* Logistics cost */}
+            <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '20px 24px' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Icon d={IC.truck} size={14} color="var(--warning)" />
+                物流ルート別コスト比較
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {[
+                { route: '直送 (現行)', logistics: '¥ 4,200/便', lead: '2日', total: `¥${t1.currentPrice + 8}`, tag: '現行' },
+                { route: '共同配送', logistics: '¥ 2,800/便', lead: '3日', total: `¥${t1.currentPrice + 4}`, tag: '推奨', highlight: true }].
+                map((r) =>
+                <div key={r.route} style={{ padding: '14px 16px', background: r.highlight ? 'var(--yellow-light)' : 'var(--zinc-50)', border: `1px solid ${r.highlight ? '#FFD601' : 'var(--zinc-200)'}`, borderRadius: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{r.route}</span>
+                      <Badge type={r.highlight ? 'yellow' : 'neutral'} size="xs">{r.tag}</Badge>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--zinc-500)', marginBottom: 2 }}>物流費: <b style={{ color: 'var(--zinc-800)' }}>{r.logistics}</b></div>
+                    <div style={{ fontSize: 12, color: 'var(--zinc-500)', marginBottom: 2 }}>リードタイム: <b style={{ color: 'var(--zinc-800)' }}>{r.lead}</b></div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: r.highlight ? 'var(--green-700)' : 'var(--zinc-700)', marginTop: 6 }}>実質単価: {r.total}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>}
+        </>}
+      </div>
+      {detailFactory &&
+      <SupplierDetailModal
+        factory={detailFactory}
+        onClose={() => setDetailFactory(null)}
+        onSelect={(id) => setSelected((p) => p.includes(id) ? p : [...p, id])}
+        selected={selected.includes(detailFactory.id)} />
+
+      }
+    </div>);
+
+};
+
+// ─── SCREEN: ORDERS ───────────────────────────────────────────────
+const ScreenOrders = () => {
+  const [filter, setFilter] = useState('all');
+  const [expanded, setExpanded] = useState(null);
+
+  const tabs = [{ k: 'all', l: '全件' }, { k: 'delayed', l: '遅延リスク' }, { k: 'discrepancy', l: '要確認' }, { k: 'completed', l: '完了' }];
+  const filtered = ORDERS.filter((o) => {
+    if (filter === 'all') return true;
+    if (filter === 'delayed') return o.status === 'delayed';
+    if (filter === 'discrepancy') return o.status === 'negotiating' || o.status === 'qty_mismatch';
+    if (filter === 'completed') return o.status === 'completed';
+    return true;
+  });
+
+  const statusInfo = {
+    on_track: { label: '順調', type: 'green' },
+    negotiating: { label: '価格確認中', type: 'orange' },
+    delayed: { label: '遅延', type: 'red' },
+    completed: { label: '完了', type: 'neutral' },
+    qty_mismatch: { label: '数量差異', type: 'orange' }
+  };
+
+  return (
+    <div style={{ padding: '28px 32px', overflowY: 'auto', height: '100%' }}>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--zinc-400)', marginBottom: 4 }}>ORDER MANAGEMENT</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ fontSize: 20, fontWeight: 700 }}>発注管理</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: 'var(--yellow-light)', border: '1px solid #FFD601', borderRadius: 8, fontSize: 12, color: 'var(--zinc-700)' }}>
+              <Icon d={IC.bot} size={13} color="var(--yellow)" />
+              <span>AI自動解析 <b>稼働中</b></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter tabs */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--zinc-200)', paddingBottom: 0 }}>
+        {tabs.map((t) =>
+        <button key={t.k} onClick={() => setFilter(t.k)}
+        style={{ padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: filter === t.k ? 600 : 400, color: filter === t.k ? 'var(--green-600)' : 'var(--zinc-500)', borderBottom: `2px solid ${filter === t.k ? 'var(--green-600)' : 'transparent'}`, marginBottom: -1, transition: 'all .15s' }}>
+            {t.l}
+            {t.k === 'delayed' && <span style={{ marginLeft: 4, fontSize: 11, color: 'var(--error)' }}>({ORDERS.filter((o) => o.status === 'delayed').length})</span>}
+            {t.k === 'discrepancy' && <span style={{ marginLeft: 4, fontSize: 11, color: 'var(--warning)' }}>({ORDERS.filter((o) => o.status === 'negotiating' || o.status === 'qty_mismatch').length})</span>}
+          </button>
+        )}
+      </div>
+
+      {/* Table */}
+      <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, overflow: 'hidden' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 130px 90px 90px 100px 100px', padding: '10px 16px', background: 'var(--zinc-50)', borderBottom: '1px solid var(--zinc-200)', fontSize: 11, fontWeight: 600, color: 'var(--zinc-500)', letterSpacing: '.04em' }}>
+          <span>発注番号</span><span>商品 / 仕入先</span><span>サプライヤー</span><span>発注日</span><span>納期</span><span>ステータス</span><span>AI分析</span>
+        </div>
+        {filtered.map((o) => {
+          const si = statusInfo[o.status] || statusInfo.on_track;
+          const isExp = expanded === o.id;
+          return (
+            <div key={o.id}>
+              <div onClick={() => setExpanded(isExp ? null : o.id)}
+              style={{ display: 'grid', gridTemplateColumns: '160px 1fr 130px 90px 90px 100px 100px', padding: '13px 16px', borderBottom: '1px solid var(--zinc-100)', cursor: 'pointer', background: isExp ? 'var(--zinc-50)' : 'white', transition: 'background .15s' }}
+              onMouseEnter={(e) => {if (!isExp) e.currentTarget.style.background = 'var(--zinc-50)';}}
+              onMouseLeave={(e) => {if (!isExp) e.currentTarget.style.background = 'white';}}>
+                <span style={{ fontSize: 12, fontFamily: 'Futura,sans-serif', color: 'var(--zinc-500)', letterSpacing: '.03em' }}>{o.id.slice(-10)}</span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--zinc-800)' }}>{o.product}</div>
+                  <div style={{ fontSize: 11, color: 'var(--zinc-400)' }}>{o.qty.toLocaleString()}{o.unit}</div>
+                </div>
+                <span style={{ fontSize: 12, color: 'var(--zinc-600)' }}>{o.supplier}</span>
+                <span style={{ fontSize: 12, color: 'var(--zinc-500)' }}>{o.ordered.slice(5)}</span>
+                <span style={{ fontSize: 12, color: o.status === 'delayed' ? 'var(--error)' : 'var(--zinc-500)', fontWeight: o.status === 'delayed' ? 600 : 400 }}>{o.delivery.slice(5)}</span>
+                <span><Badge type={si.type} size="xs">{si.label}</Badge></span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {o.discrepancy && <Icon d={o.discrepancy.severity === 'error' ? IC.alert : IC.clock} size={12} color={o.discrepancy.severity === 'error' ? 'var(--error)' : 'var(--warning)'} />}
+                  <span style={{ fontSize: 12, color: o.discrepancy ? 'var(--warning)' : 'var(--zinc-400)' }}>{o.analysis}</span>
+                </div>
+              </div>
+              {isExp && o.discrepancy &&
+              <div style={{ padding: '14px 24px 14px 52px', background: o.discrepancy.severity === 'error' ? '#fff5f5' : '#fffbeb', borderBottom: '1px solid var(--zinc-200)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <Icon d={IC.alert} size={14} color={o.discrepancy.severity === 'error' ? 'var(--error)' : 'var(--warning)'} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: o.discrepancy.severity === 'error' ? 'var(--error)' : 'var(--warning)', marginBottom: 4 }}>
+                      {o.discrepancy.type === 'delay' ? '納期遅延アラート' : o.discrepancy.type === 'price' ? '価格差異アラート' : '数量差異アラート'}
+                    </div>
+                    <p style={{ fontSize: 13, color: 'var(--zinc-700)', lineHeight: 1.5 }}>{o.discrepancy.detail}</p>
+                  </div>
+                </div>
+              }
+            </div>);
+
+        })}
+      </div>
+    </div>);
+
+};
+
+// ─── SUPPLIER DETAIL MODAL ───────────────────────────────────────
+const FACTORY_DETAIL = {
+  f1: { desc: '環境配慮型の持続可能な製造プロセスを実現。有機JAS認証を持つ国内有数の飲料・農産加工工場。FSSC22000取得で食品安全マネジメントも万全。', employees: '320名', capacity: '月産500万本', specialties: ['有機食品製造', '低温殺菌', '冷凍食品', 'クリーンルーム対応'], products: ['飲料', '野菜ジュース', '農産加工品', 'ドレッシング'], packaging: ['pet', 'can', 'pouch', 'glass'], address: '福岡県福岡市博多区製造町1-2-3', recentProjects: ['有機野菜スムージー 100万本/月', '無添加ドレッシング 50万本/月'] },
+  f2: { desc: '機能性食品・健康食品の開発・製造に特化した最新設備を完備。オーガニック素材の取り扱いに豊富な実績。', employees: '180名', capacity: '月産200万個', specialties: ['機能性食品', 'サプリメント', 'オーガニック', '小ロット対応'], products: ['プロテイン飲料', '機能性スナック', '栄養補助食品'], packaging: ['pet', 'pouch', 'carton', 'zipper'], address: '東京都江東区有明2-4-5', recentProjects: ['プロテインバー 30万本/月', '有機スポーツドリンク 80万本/月'] },
+  f3: { desc: '北海道産の豊富な原材料を活かした高品質製造。乳製品・冷凍食品の製造実績が豊富で、独自の低温管理技術を持つ。', employees: '250名', capacity: '月産300万個', specialties: ['乳製品加工', '冷凍食品', '低温管理', 'バルク製造'], products: ['チーズ', 'アイスクリーム', '冷凍野菜', '乳飲料'], packaging: ['cup', 'carton', 'pouch', 'can'], address: '北海道札幌市北区酪農2-5-1', recentProjects: ['北海道バター 月産50トン', '冷凍コーン 月産100万袋'] },
+  f4: { desc: '伝統的製法と最新技術を融合させた高品質製造。調味料・加工食品の製造実績60年以上で、小ロットにも対応。', employees: '140名', capacity: '月産150万本', specialties: ['醸造・発酵', '小ロット対応', '伝統製法', 'OEM受託'], products: ['醤油', '味噌', 'ドレッシング', 'ソース'], packaging: ['glass', 'pet', 'pouch', 'tube'], address: '大阪府大阪市西区調味料町3-1-8', recentProjects: ['プレミアム醤油 月産20万本', '有機味噌 月産5万個'] },
+  f5: { desc: '最新技術を駆使した革新的な製造ソリューション。菓子・スナック類の製造を中心に、カスタマイズ対応力が強み。', employees: '95名', capacity: '月産80万個', specialties: ['スナック製造', 'カスタマイズ', '新技術導入', '少量多品種'], products: ['グミ', 'スナック', 'チョコレート', 'クッキー'], packaging: ['pouch', 'zipper', 'carton', 'cup'], address: '愛知県名古屋市中区製菓通り5-2-1', recentProjects: ['プロテイングミ 月産10万個', 'グルテンフリークッキー 月産5万個'] },
+  f6: { desc: '伝統的な発酵技術を活かした製品開発。東北の豊かな食材を使ったユニークな発酵食品・調味料の製造が強み。', employees: '80名', capacity: '月産60万個', specialties: ['発酵食品', '伝統製法', '地域素材活用', '少量多品種'], products: ['味噌', '甘酒', '漬物', '発酵調味料'], packaging: ['glass', 'pouch', 'cup', 'zipper'], address: '宮城県仙台市宮城野区東部産業2-8-4', recentProjects: ['東北味噌詰め合わせ 月産3万個', '甘酒 月産10万本'] }
+};
+
+const PKG_LABELS = { pet: 'PETボトル', can: 'アルミ缶', pouch: 'パウチ', glass: 'ガラス瓶', carton: 'カートン', cup: 'カップ', tube: 'チューブ', zipper: 'ジッパーバッグ' };
+
+const SupplierDetailModal = ({ factory, onClose, onSelect, selected }) => {
+  const [tab, setTab] = useState('overview');
+  const detail = FACTORY_DETAIL[factory.id] || {};
+  const TABS = [{ k: 'overview', l: '概要' }, { k: 'products', l: '製品カテゴリ' }, { k: 'capacity', l: '認証・製造能力' }, { k: 'access', l: 'アクセス' }];
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex' }} onClick={onClose}>
+      <div style={{ flex: 1, background: 'rgba(0,0,0,.45)' }} />
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 680, background: 'white', height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 32px rgba(0,0,0,.15)' }}>
+        {/* Header */}
+        <div style={{ background: '#0a1f14', padding: '28px 28px 24px', flexShrink: 0, position: 'relative' }}>
+          <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,.1)', border: 'none', width: 32, height: 32, borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon d={IC.x} size={16} color="white" />
+          </button>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 16 }}>
+            <div style={{ width: 52, height: 52, borderRadius: 12, background: 'rgba(255,255,255,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Icon d={IC.factory} size={24} color="rgba(255,255,255,.8)" />
+            </div>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'white', marginBottom: 3 }}>{factory.name}</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,.55)', display: 'flex', gap: 8, alignItems: 'center' }}>
+                <Icon d={IC.factory} size={11} color="rgba(255,255,255,.4)" />
+                <span>{factory.loc}（{factory.dist}）</span>
+                <span>·</span>
+                <span>設立{factory.year}年</span>
+                <span>·</span>
+                <span>{detail.employees || '—'}</span>
+              </div>
+            </div>
+          </div>
+          {/* Stats row */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
+            {[
+            { l: '評価', v: `★ ${factory.rating}`, sub: `${factory.reviews}件` },
+            { l: '最小ロット', v: factory.min, sub: '' },
+            { l: '回答時間', v: factory.lead, sub: '' },
+            { l: '月産能力', v: detail.capacity || '—', sub: '' }].
+            map((s) =>
+            <div key={s.l} style={{ background: 'rgba(255,255,255,.08)', borderRadius: 8, padding: '10px 12px' }}>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,.45)', marginBottom: 3, letterSpacing: '.04em' }}>{s.l}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>{s.v}</div>
+                {s.sub && <div style={{ fontSize: 10, color: 'rgba(255,255,255,.35)' }}>{s.sub}</div>}
+              </div>
+            )}
+          </div>
+          {/* Certs */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 14 }}>
+            {factory.certs.map((c) => <span key={c} style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 5, background: 'rgba(255,214,1,.15)', color: '#FFD601', border: '1px solid rgba(255,214,1,.3)' }}>{c}</span>)}
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--zinc-200)', background: 'white', flexShrink: 0 }}>
+          {TABS.map((t) =>
+          <button key={t.k} onClick={() => setTab(t.k)}
+          style={{ padding: '11px 18px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: tab === t.k ? 600 : 400, color: tab === t.k ? 'var(--green-600)' : 'var(--zinc-500)', borderBottom: `2px solid ${tab === t.k ? 'var(--green-600)' : 'transparent'}`, marginBottom: -1, transition: 'all .15s' }}>
+              {t.l}
+            </button>
+          )}
+        </div>
+
+        {/* Content */}
+        <div style={{ flex: 1, padding: '24px 28px', overflowY: 'auto' }}>
+          {tab === 'overview' &&
+          <div>
+              <p style={{ fontSize: 14, color: 'var(--zinc-700)', lineHeight: 1.7, marginBottom: 20 }}>{detail.desc}</p>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: 'var(--zinc-800)' }}>専門分野</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+                {(detail.specialties || []).map((s) =>
+              <span key={s} style={{ padding: '5px 12px', background: 'var(--green-50)', border: '1px solid var(--green-200)', borderRadius: 6, fontSize: 12, color: 'var(--green-700)', fontWeight: 500 }}>{s}</span>
+              )}
+              </div>
+              {(detail.recentProjects || []).length > 0 && <>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: 'var(--zinc-800)' }}>最近の受託実績</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {detail.recentProjects.map((p, i) =>
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'var(--zinc-50)', borderRadius: 8, border: '1px solid var(--zinc-200)' }}>
+                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green-500)', flexShrink: 0 }} />
+                      <span style={{ fontSize: 13, color: 'var(--zinc-700)' }}>{p}</span>
+                    </div>
+                )}
+                </div>
+              </>}
+            </div>
+          }
+          {tab === 'products' &&
+          <div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: 'var(--zinc-800)' }}>対応製品カテゴリ</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+                {(detail.products || []).map((p) =>
+              <div key={p} style={{ padding: '14px 16px', background: 'var(--zinc-50)', border: '1px solid var(--zinc-200)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--green-100)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <Icon d={IC.package} size={15} color="var(--green-700)" />
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--zinc-800)' }}>{p}</span>
+                  </div>
+              )}
+              </div>
+            </div>
+          }
+          {tab === 'capacity' &&
+          <div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>認証・資格</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+                {factory.certs.map((c) =>
+              <span key={c} style={{ padding: '6px 14px', background: 'var(--green-50)', border: '1px solid var(--green-300)', borderRadius: 6, fontSize: 13, fontWeight: 600, color: 'var(--green-700)' }}>{c}</span>
+              )}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>製造能力</div>
+              <div style={{ border: '1px solid var(--zinc-200)', borderRadius: 10, overflow: 'hidden' }}>
+                {[
+              { l: '月産能力', v: detail.capacity || '—' },
+              { l: '従業員数', v: detail.employees || '—' },
+              { l: '最小発注ロット', v: factory.min },
+              { l: '回答リードタイム', v: factory.lead },
+              { l: '設立年', v: `${factory.year}年` }].
+              map((row, i) =>
+              <div key={row.l} style={{ display: 'flex', padding: '11px 16px', borderTop: i === 0 ? 'none' : '1px solid var(--zinc-100)', background: i % 2 === 0 ? 'white' : 'var(--zinc-50)' }}>
+                    <span style={{ fontSize: 12, color: 'var(--zinc-500)', minWidth: 130 }}>{row.l}</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--zinc-800)' }}>{row.v}</span>
+                  </div>
+              )}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginTop: 20, marginBottom: 12 }}>対応パッケージング</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {(detail.packaging || []).map((p) =>
+              <span key={p} style={{ padding: '5px 12px', background: 'var(--zinc-100)', border: '1px solid var(--zinc-200)', borderRadius: 6, fontSize: 12, color: 'var(--zinc-700)' }}>{PKG_LABELS[p] || p}</span>
+              )}
+              </div>
+            </div>
+          }
+          {tab === 'access' &&
+          <div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>所在地・アクセス</div>
+              <div style={{ padding: '16px', background: 'var(--zinc-50)', border: '1px solid var(--zinc-200)', borderRadius: 10, marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: 'var(--zinc-400)', marginBottom: 4 }}>住所</div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--zinc-800)' }}>{detail.address || '—'}</div>
+              </div>
+              {/* Map placeholder */}
+              <div style={{ height: 200, background: 'var(--zinc-100)', border: '1px solid var(--zinc-200)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+                <Icon d={IC.factory} size={28} color="var(--zinc-300)" />
+                <span style={{ fontSize: 12, color: 'var(--zinc-400)' }}>地図プレースホルダー</span>
+                <span style={{ fontSize: 11, color: 'var(--zinc-300)' }}>{factory.loc}({factory.dist})</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {[{ l: '地域', v: factory.loc }, { l: '距離', v: factory.dist }].map((r) =>
+              <div key={r.l} style={{ padding: '12px 14px', background: 'var(--zinc-50)', border: '1px solid var(--zinc-200)', borderRadius: 8 }}>
+                    <div style={{ fontSize: 11, color: 'var(--zinc-400)', marginBottom: 3 }}>{r.l}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--zinc-800)' }}>{r.v}</div>
+                  </div>
+              )}
+              </div>
+            </div>
+          }
+        </div>
+
+        {/* Footer CTA */}
+        <div style={{ padding: '16px 28px', borderTop: '1px solid var(--zinc-200)', background: 'white', display: 'flex', gap: 10, justifyContent: 'flex-end', flexShrink: 0 }}>
+          <button onClick={onClose} style={{ padding: '9px 18px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--zinc-600)' }}>閉じる</button>
+          <button onClick={() => {onSelect(factory.id);onClose();}}
+          style={{ padding: '9px 20px', background: selected ? 'var(--zinc-200)' : 'var(--green-600)', color: selected ? 'var(--zinc-600)' : 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {selected ? <>✓ 選択済み</> : <><Icon d={IC.zap} size={14} color="white" />見積依頼に追加</>}
+          </button>
+        </div>
+      </div>
+    </div>);
+
+};
+
+const KNOWN_MANUFACTURERS = [
+'長野食品加工', '京都豆腐工業', '静岡スポーツ食品', '北海道食品センター',
+'関西製造パートナーズ', '中部食品工業'];
+
+
+const HideFromSelector = ({ selected, onChange }) => {
+  const [input, setInput] = useState('');
+  const [open, setOpen] = useState(false);
+  const filtered = KNOWN_MANUFACTURERS.filter((m) => !selected.includes(m) && m.includes(input));
+  const addItem = (name) => {if (name.trim() && !selected.includes(name.trim())) onChange([...selected, name.trim()]);setInput('');setOpen(false);};
+  const remove = (name) => onChange(selected.filter((x) => x !== name));
+
+  return (
+    <div style={{ marginTop: 8, marginBottom: 4 }}>
+      {/* Selected tags */}
+      {selected.length > 0 &&
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+          {selected.map((m) =>
+        <span key={m} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: 'var(--zinc-100)', border: '1px solid var(--zinc-200)', borderRadius: 6, fontSize: 12, color: 'var(--zinc-700)' }}>
+              {m}
+              <button onClick={() => remove(m)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--zinc-400)', padding: 0, lineHeight: 1, fontSize: 14 }}>×</button>
+            </span>
+        )}
+        </div>
+      }
+      {/* Input + dropdown */}
+      <div style={{ position: 'relative' }}>
+        <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--zinc-200)', borderRadius: 8, background: 'white', overflow: 'visible' }}>
+          <Icon d={IC.search} size={13} color="var(--zinc-400)" style={{ marginLeft: 10, flexShrink: 0 }} />
+          <input
+            value={input} placeholder="製造業者を選択または入力..."
+            onChange={(e) => {setInput(e.target.value);setOpen(true);}}
+            onFocus={() => setOpen(true)}
+            onKeyDown={(e) => {if (e.key === 'Enter' && input.trim()) addItem(input);if (e.key === 'Escape') setOpen(false);}}
+            style={{ flex: 1, padding: '8px 10px', border: 'none', outline: 'none', fontSize: 13, fontFamily: 'inherit', background: 'transparent' }} />
+          
+          {input &&
+          <button onClick={() => addItem(input)} style={{ padding: '4px 10px', margin: '3px 4px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>追加</button>
+          }
+        </div>
+        {open && (filtered.length > 0 || input.trim()) &&
+        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,.1)', zIndex: 50, maxHeight: 180, overflowY: 'auto' }}>
+            {filtered.map((m) =>
+          <div key={m} onClick={() => addItem(m)} style={{ padding: '9px 14px', fontSize: 13, cursor: 'pointer', color: 'var(--zinc-700)', borderBottom: '1px solid var(--zinc-50)' }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--zinc-50)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'white'}>
+                {m}
+              </div>
+          )}
+            {input.trim() && !KNOWN_MANUFACTURERS.includes(input.trim()) &&
+          <div onClick={() => addItem(input)} style={{ padding: '9px 14px', fontSize: 13, cursor: 'pointer', color: 'var(--green-600)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--green-50)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'white'}>
+                <Icon d={IC.plus} size={13} color="var(--green-600)" />「{input.trim()}」を追加
+              </div>
+          }
+          </div>
+        }
+      </div>
+      <p style={{ fontSize: 11, color: 'var(--zinc-400)', marginTop: 5 }}>リストにない場合は名前を入力して「追加」してください</p>
+    </div>);
+
+};
+const FactoryCard = ({ f, selected, onToggle, onDetail }) =>
+<div style={{ background: selected ? 'var(--green-50)' : 'white', border: `1px solid ${selected ? 'var(--green-600)' : 'var(--zinc-200)'}`, borderRadius: 10, padding: '14px 16px', transition: 'all .15s', position: 'relative' }}>
+    <div style={{ position: 'absolute', top: 12, right: 12, width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${selected ? 'var(--green-600)' : 'var(--zinc-300)'}`, background: selected ? 'var(--green-600)' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }} onClick={onToggle}>
+      {selected && <Icon d="M20 6L9 17l-5-5" size={10} color="white" />}
+    </div>
+    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 3, paddingRight: 24 }}>{f.name}</div>
+    <div style={{ display: 'flex', gap: 8, marginBottom: 6, fontSize: 11, color: 'var(--zinc-400)', flexWrap: 'wrap' }}>
+      <span>{f.loc}({f.dist})</span><span>最小{f.min}</span>
+      <span style={{ color: 'var(--yellow)', fontWeight: 700 }}>★{f.rating}({f.reviews})</span>
+      <span style={{ color: 'var(--info)' }}>{f.lead}</span>
+    </div>
+    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+      {f.certs.map((c) => <span key={c} style={{ fontSize: 10, background: 'var(--zinc-100)', color: 'var(--zinc-600)', padding: '2px 6px', borderRadius: 4, fontWeight: 500 }}>{c}</span>)}
+    </div>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <span style={{ fontSize: 11, color: 'var(--zinc-400)' }}>設立: {f.year}年</span>
+      <button onClick={onDetail} style={{ fontSize: 11, color: 'var(--green-600)', fontWeight: 600, background: 'none', border: '1px solid var(--green-200)', borderRadius: 5, padding: '3px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>詳細を見る</button>
+    </div>
+  </div>;
+
+
+const ScreenNew = () => {
+  const [step, setStep] = useState(1);
+  const [rfqSent, setRfqSent] = useState(false);
+  const [selected, setSelected] = useState([]);
+  const [solSel, setSolSel] = useState([]);
+  const [detailFactory, setDetailFactory] = useState(null);
+  const [form, setForm] = useState({ desc: '', cat: '', phase: '', hideFrom: false, anon: false, qty: '', unit: '個', temps: [], pkg: '', pkgCustom: '', pkgFlexible: false, allergens: [], certs: [], extra: '' });
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const tog = (k, v) => set(k, form[k].includes(v) ? form[k].filter((x) => x !== v) : [...form[k], v]);
+  const togSel = (id) => setSelected((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+
+  const CATS = ['飲料', '菓子・スイーツ', '調味料', 'スナック', 'サプリメント', '冷凍食品', '乳製品', 'その他'];
+  const PHASES = [{ k: 'info', l: '情報収集' }, { k: 'plan', l: '企画済' }, { k: 'mfr', l: '製造中' }];
+  const TEMPS = [{ k: 'room', l: '常温', sub: '15–25°C' }, { k: 'cold', l: '冷蔵', sub: '0–10°C' }, { k: 'freeze', l: '冷凍', sub: '−18°C以下' }];
+  const ALLERGENS = ['Allergen-Free', 'Gluten-Free', 'Dairy-Free', 'Peanut-Free', 'Nut-Free', 'Soy-Free', 'Egg-Free', 'Shellfish-Free'];
+  const CERTS = ['HACCP', 'ISO 22000', 'JAS有機', 'FDA', 'BRC', 'Halal', 'SQF', 'Kosher', 'IFS'];
+  const SOLUTIONS = [
+  { k: 'recipe', l: 'レシピ開発支援', tags: ['栄養成分計算', '食感改良', '保存性向上'] },
+  { k: 'process', l: '生産工程最適化', tags: ['コスト削減', '品質向上', '生産性向上'] },
+  { k: 'logistics', l: '物流・配送サポート', tags: ['配送コスト削減', '納期短縮', '品質保持'] },
+  { k: 'qa', l: '品質保証・検査', tags: ['安全性確保', '法規制対応', '品質証明'] },
+  { k: 'market', l: '市場調査・分析', tags: ['需要予測', '競合分析', '価格戦略'] },
+  { k: 'legal', l: '法規制対応', tags: ['許可申請', '表示作成', '監査対応'] },
+  { k: 'sustain', l: '持続可能性対応', tags: ['CO2削減', '廃棄物削減', 'エコ認証'] },
+  { k: 'export', l: '輸出・海外展開', tags: ['輸出許可', '現地適応', '販路開拓'] },
+  { k: 'pkg', l: 'パッケージ設計', tags: ['デザイン性', '保存性', 'コスト効率'] }];
+
+  const FACTORIES = [
+  { id: 'f1', name: '九州グリーンファクトリー', loc: '福岡県', dist: '120km', min: '1,000個〜', rating: 4.9, reviews: 203, lead: '6時間以内', match: true, certs: ['HACCP', 'ISO22000', 'FSSC22000', '有機JAS'], year: 2001 },
+  { id: 'f2', name: '東京フードテック株式会社', loc: '東京都', dist: '15km', min: '1,000個〜', rating: 4.8, reviews: 127, lead: '24時間以内', match: true, certs: ['HACCP', 'ISO22000', 'JFS'], year: 1995 },
+  { id: 'f3', name: '北海道プレミアム工場', loc: '北海道', dist: '180km', min: '2,000個〜', rating: 4.7, reviews: 156, lead: '18時間以内', match: true, certs: ['HACCP', 'ISO22000'], year: 1987 },
+  { id: 'f4', name: '関西製造パートナーズ', loc: '大阪府', dist: '45km', min: '5,000個〜', rating: 4.6, reviews: 89, lead: '12時間以内', match: true, certs: ['HACCP', '有機JAS'], year: 1978 },
+  { id: 'f5', name: '中部イノベーション製造', loc: '愛知県', dist: '35km', min: '500個〜', rating: 4.5, reviews: 74, lead: '8時間以内', match: false, certs: ['HACCP', 'JFS'], year: 2010 },
+  { id: 'f6', name: '東北トラディション', loc: '宮城県', dist: '95km', min: '3,000個〜', rating: 4.4, reviews: 92, lead: '24時間以内', match: false, certs: ['HACCP'], year: 1965 }];
+
+
+  const inS = { width: '100%', padding: '9px 12px', border: '1px solid var(--zinc-200)', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', color: 'var(--zinc-800)', background: 'white', outline: 'none', boxSizing: 'border-box' };
+  const Fld = ({ label, req, children }) =>
+  <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--zinc-700)', marginBottom: 6 }}>{label}{req && <span style={{ color: 'var(--error)', marginLeft: 2 }}>*</span>}</div>
+      {children}
+    </div>;
+
+
+  if (rfqSent) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '40px' }}>
+      <div style={{ textAlign: 'center', maxWidth: 400 }}>
+        <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--green-50)', border: '1px solid var(--green-200)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+          <Icon d={IC.check} size={26} color="var(--green-600)" />
+        </div>
+        <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>相見積依頼を送信しました</div>
+        <p style={{ fontSize: 13, color: 'var(--zinc-500)', marginBottom: 4 }}>選択した{selected.length}社へAIエージェントが自律的にコンタクトしています</p>
+        <p style={{ fontSize: 12, color: 'var(--zinc-400)', marginBottom: 24 }}>回答は通常24〜48時間以内。エージェント管理から進捗を確認できます。</p>
+        <button onClick={() => {setStep(1);setRfqSent(false);setSelected([]);setSolSel([]);}} style={{ padding: '10px 24px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>新しい案件を作成</button>
+      </div>
+    </div>);
+
+
+  return (
+    <div style={{ overflowY: 'auto', height: '100%' }}>
+      <div style={{ maxWidth: 780, margin: '0 auto', padding: '28px 32px' }}>
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--zinc-400)', marginBottom: 4 }}>NEW CASE</div>
+          <h2 style={{ fontSize: 20, fontWeight: 700 }}>案件作成</h2>
+          <p style={{ fontSize: 13, color: 'var(--zinc-500)', marginTop: 2 }}>ステップに従って商品情報を入力し、最適な製造パートナーを見つけましょう</p>
+        </div>
+
+        {step <= 3 && <>
+          <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '14px 20px', marginBottom: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>ステップ {step}/3: {['', '基本情報・プライバシー設定', '発注要件', '解決領域'][step]}</span>
+              <span style={{ fontSize: 12, color: 'var(--zinc-400)' }}>{Math.round((step - 1) / 2 * 100)}% 完了</span>
+            </div>
+            <div style={{ height: 5, background: 'var(--zinc-100)', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ height: '100%', background: 'var(--green-600)', borderRadius: 3, width: `${Math.round((step - 1) / 2 * 100)}%`, transition: 'width .4s var(--ease)' }} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 20 }}>
+            {[{ n: 1, l: '基本情報・プライバシー設定' }, { n: 2, l: '発注要件' }, { n: 3, l: '解決領域' }].map((s, i) =>
+            <React.Fragment key={s.n}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <div style={{ width: 26, height: 26, borderRadius: '50%', background: step >= s.n ? 'var(--zinc-900)' : 'var(--zinc-200)', color: step >= s.n ? 'white' : 'var(--zinc-400)', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{s.n}</div>
+                  <span style={{ fontSize: 12, color: step === s.n ? 'var(--zinc-800)' : 'var(--zinc-400)', fontWeight: step === s.n ? 600 : 400 }}>{s.l}</span>
+                </div>
+                {i < 2 && <div style={{ width: 28, height: 1, background: 'var(--zinc-300)' }} />}
+              </React.Fragment>
+            )}
+          </div>
+        </>}
+
+        {step === 1 && <>
+          <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '20px 24px', marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Icon d={IC.package} size={14} color="var(--green-600)" />基本情報</div>
+            <Fld label="商品説明" req>
+              <textarea value={form.desc} onChange={(e) => set('desc', e.target.value.slice(0, 500))} placeholder="開発したい商品について詳しく教えてください..." style={{ ...inS, height: 100, resize: 'vertical', lineHeight: 1.5 }} />
+              <div style={{ fontSize: 11, color: 'var(--zinc-400)', textAlign: 'right', marginTop: 3 }}>{form.desc.length}/500</div>
+            </Fld>
+            <Fld label="商品カテゴリ" req>
+              <select value={form.cat} onChange={(e) => set('cat', e.target.value)} style={{ ...inS, width: 'auto' }}>
+                <option value="">カテゴリを選択</option>
+                {CATS.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </Fld>
+            <Fld label="開発フェーズ" req>
+              <div style={{ display: 'flex', gap: 20 }}>
+                {PHASES.map((p) =>
+                <label key={p.k} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+                    <input type="radio" name="phase" checked={form.phase === p.k} onChange={() => set('phase', p.k)} style={{ accentColor: 'var(--green-600)' }} />
+                    {p.l}
+                  </label>
+                )}
+              </div>
+            </Fld>
+          </div>
+          <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '20px 24px', marginBottom: 20 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}><Icon d={IC.eye} size={14} color="var(--zinc-500)" />プライバシー設定</div>
+
+            {/* hideFrom toggle */}
+            <div style={{ marginBottom: form.hideFrom ? 0 : 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontSize: 13, color: 'var(--zinc-700)' }}>現在の製造業者から案件を非表示にする</span>
+                <button onClick={() => set('hideFrom', !form.hideFrom)} style={{ width: 42, height: 24, borderRadius: 12, border: 'none', background: form.hideFrom ? 'var(--green-600)' : 'var(--zinc-300)', cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
+                  <span style={{ position: 'absolute', top: 3, left: form.hideFrom ? 21 : 3, width: 18, height: 18, borderRadius: '50%', background: 'white', transition: 'left .2s', display: 'block' }} />
+                </button>
+              </div>
+              {form.hideFrom &&
+              <HideFromSelector
+                selected={form.hideFromList || []}
+                onChange={(v) => set('hideFromList', v)} />
+
+              }
+            </div>
+
+            {/* anon toggle */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, marginTop: form.hideFrom ? 12 : 0 }}>
+              <span style={{ fontSize: 13, color: 'var(--zinc-700)' }}>案件を匿名で投稿する</span>
+              <button onClick={() => set('anon', !form.anon)} style={{ width: 42, height: 24, borderRadius: 12, border: 'none', background: form.anon ? 'var(--green-600)' : 'var(--zinc-300)', cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
+                <span style={{ position: 'absolute', top: 3, left: form.anon ? 21 : 3, width: 18, height: 18, borderRadius: '50%', background: 'white', transition: 'left .2s', display: 'block' }} />
+              </button>
+            </div>
+          </div>
+        </>}
+
+        {step === 2 && <>
+          <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '20px 24px', marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>数量要件</div>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 4 }}>
+              <Fld label="最低発注数量（量）" req>
+                <select value={form.qty} onChange={(e) => set('qty', e.target.value)} style={{ ...inS, width: 160 }}>
+                  <option value="">選択してください</option>
+                  {['0–1,000', '1,000–5,000', '5,000–10,000', '10,000–50,000', '50,000–100,000', '100,000–500,000', '500,000以上'].map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </Fld>
+              <Fld label="最低発注数量（単位）" req>
+                <select value={form.unit} onChange={(e) => set('unit', e.target.value)} style={{ ...inS, width: 100 }}>
+                  {['個', '本', '袋', '缶', 'kg', 'g', 'L', 'mL', 'pc'].map((u) => <option key={u}>{u}</option>)}
+                </select>
+              </Fld>
+            </div>
+            <Fld label="形態（温度帯）" req>
+              <div style={{ display: 'flex', gap: 10 }}>
+                {TEMPS.map((t) =>
+                <div key={t.k} onClick={() => tog('temps', t.k)} style={{ padding: '10px 18px', border: `1px solid ${form.temps.includes(t.k) ? 'var(--green-600)' : 'var(--zinc-200)'}`, borderRadius: 8, cursor: 'pointer', background: form.temps.includes(t.k) ? 'var(--green-50)' : 'white', textAlign: 'center', userSelect: 'none' }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: form.temps.includes(t.k) ? 'var(--green-700)' : 'var(--zinc-700)' }}>{t.l}</div>
+                    <div style={{ fontSize: 10, color: 'var(--zinc-400)', marginTop: 2 }}>{t.sub}</div>
+                  </div>
+                )}
+              </div>
+            </Fld>
+          </div>
+          <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '20px 24px', marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>パッケージング要件</div>
+            <Fld label="Packaging Format" req>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 10 }}>
+                {[
+                { k: 'pet', l: 'PETボトル', svg: <svg viewBox="0 0 40 56" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="13" y="2" width="14" height="5" rx="2" fill="currentColor" opacity=".3" /><path d="M10 10 Q8 14 7 20 L7 48 Q7 52 10 52 L30 52 Q33 52 33 48 L33 20 Q32 14 30 10 Z" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".1" /><ellipse cx="20" cy="10" rx="8" ry="3" fill="currentColor" opacity=".4" /><rect x="9" y="26" width="22" height="2" rx="1" fill="currentColor" opacity=".3" /></svg> },
+                { k: 'can', l: 'アルミ缶', svg: <svg viewBox="0 0 40 56" fill="none"><ellipse cx="20" cy="8" rx="13" ry="4" fill="currentColor" opacity=".35" /><rect x="7" y="8" width="26" height="38" fill="currentColor" opacity=".1" stroke="currentColor" strokeWidth="2" /><ellipse cx="20" cy="46" rx="13" ry="4" fill="currentColor" opacity=".35" /><rect x="9" y="18" width="22" height="12" fill="currentColor" opacity=".15" /></svg> },
+                { k: 'pouch', l: 'パウチ', svg: <svg viewBox="0 0 44 56" fill="none"><path d="M8 8 Q8 4 14 4 L30 4 Q36 4 36 8 L38 46 Q38 52 22 52 Q6 52 6 46 Z" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".1" /><rect x="10" y="16" width="24" height="2" rx="1" fill="currentColor" opacity=".3" /><ellipse cx="22" cy="34" rx="10" ry="7" fill="currentColor" opacity=".15" /></svg> },
+                { k: 'glass', l: 'ガラス瓶', svg: <svg viewBox="0 0 40 56" fill="none"><rect x="14" y="2" width="12" height="6" rx="2" fill="currentColor" opacity=".3" /><path d="M12 10 Q8 16 8 22 L8 46 Q8 52 12 52 L28 52 Q32 52 32 46 L32 22 Q32 16 28 10 Z" stroke="currentColor" strokeWidth="1.5" fill="currentColor" opacity=".08" /><ellipse cx="20" cy="10" rx="7" ry="2.5" fill="currentColor" opacity=".35" /><path d="M10 30 Q20 26 30 30" stroke="currentColor" strokeWidth="1" opacity=".3" /></svg> },
+                { k: 'carton', l: 'カートン', svg: <svg viewBox="0 0 48 48" fill="none"><path d="M6 14 L24 6 L42 14 L42 38 L24 46 L6 38 Z" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".08" /><path d="M6 14 L24 22 L42 14" stroke="currentColor" strokeWidth="1.5" opacity=".4" /><path d="M24 22 L24 46" stroke="currentColor" strokeWidth="1.5" opacity=".4" /></svg> },
+                { k: 'cup', l: 'カップ/トレイ', svg: <svg viewBox="0 0 44 44" fill="none"><path d="M6 8 L8 38 Q8 42 22 42 Q36 42 36 38 L38 8 Z" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".1" /><ellipse cx="22" cy="8" rx="16" ry="4" fill="currentColor" opacity=".3" /><rect x="10" y="18" width="24" height="2" rx="1" fill="currentColor" opacity=".25" /></svg> },
+                { k: 'tube', l: 'チューブ', svg: <svg viewBox="0 0 36 56" fill="none"><rect x="10" y="2" width="16" height="8" rx="4" fill="currentColor" opacity=".3" /><rect x="7" y="10" width="22" height="38" rx="4" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".1" /><rect x="9" y="20" width="18" height="3" rx="1.5" fill="currentColor" opacity=".2" /></svg> },
+                { k: 'zipper', l: 'ジッパーバッグ', svg: <svg viewBox="0 0 44 52" fill="none"><rect x="4" y="8" width="36" height="40" rx="3" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".08" /><rect x="4" y="8" width="36" height="8" rx="3" fill="currentColor" opacity=".2" /><rect x="8" y="11" width="28" height="2" rx="1" fill="currentColor" opacity=".4" /></svg> }].
+                map((pkg) => {
+                  const on = form.pkg === pkg.k;
+                  return (
+                    <div key={pkg.k} onClick={() => set('pkg', on ? '' : pkg.k)}
+                    style={{ border: `1.5px solid ${on ? 'var(--green-600)' : 'var(--zinc-200)'}`, borderRadius: 10, padding: '10px 6px 8px', cursor: 'pointer', background: on ? 'var(--green-50)' : 'white', textAlign: 'center', transition: 'all .15s', userSelect: 'none' }}>
+                      <div style={{ color: on ? 'var(--green-600)' : 'var(--zinc-400)', width: 36, height: 36, margin: '0 auto 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {pkg.svg}
+                      </div>
+                      <div style={{ fontSize: 11, fontWeight: on ? 600 : 400, color: on ? 'var(--green-700)' : 'var(--zinc-600)', lineHeight: 1.3 }}>{pkg.l}</div>
+                    </div>);
+
+                })}
+              </div>
+              <input value={form.pkgCustom || ''} onChange={(e) => set('pkgCustom', e.target.value)}
+              placeholder="その他・詳細仕様があれば記入..."
+              style={{ ...inS, marginTop: 4, fontSize: 12, color: 'var(--zinc-600)' }} />
+            </Fld>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderTop: '1px solid var(--zinc-100)', marginTop: 4 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--zinc-700)' }}>他のパッケージ形式やサイズにも柔軟に対応</div>
+                <div style={{ fontSize: 11, color: 'var(--zinc-400)', marginTop: 1 }}>ONにすると上記以外の形式・サイズも提案を受け付けます</div>
+              </div>
+              <button onClick={() => set('pkgFlexible', !form.pkgFlexible)} style={{ width: 42, height: 24, borderRadius: 12, border: 'none', background: form.pkgFlexible ? 'var(--green-600)' : 'var(--zinc-300)', cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
+                <span style={{ position: 'absolute', top: 3, left: form.pkgFlexible ? 21 : 3, width: 18, height: 18, borderRadius: '50%', background: 'white', transition: 'left .2s', display: 'block' }} />
+              </button>
+            </div>
+          </div>
+          <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '20px 24px', marginBottom: 20 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>要件セクション（展開可能）</div>
+            {[{ label: 'アレルゲン要件', items: ALLERGENS, key: 'allergens' }, { label: '認証要件', items: CERTS, key: 'certs' }].map((sec) =>
+            <div key={sec.key} style={{ border: '1px solid var(--zinc-200)', borderRadius: 8, marginBottom: 8, overflow: 'hidden' }}>
+                <div style={{ padding: '10px 14px', background: 'var(--zinc-50)', fontSize: 12, fontWeight: 600, color: 'var(--zinc-700)' }}>{sec.label}</div>
+                <div style={{ padding: '10px 14px', display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+                  {sec.items.map((item) =>
+                <label key={item} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={form[sec.key].includes(item)} onChange={() => tog(sec.key, item)} style={{ accentColor: 'var(--green-600)' }} />
+                      {item}
+                    </label>
+                )}
+                </div>
+              </div>
+            )}
+            <Fld label="Additional requirement">
+              <textarea value={form.extra} onChange={(e) => set('extra', e.target.value)} placeholder="その他の特別な要件があれば記載してください..." style={{ ...inS, height: 80, resize: 'vertical' }} />
+            </Fld>
+          </div>
+        </>}
+
+        {step === 3 && <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div style={{ fontSize: 13, color: 'var(--zinc-500)' }}>製造パートナーに求める支援領域を選択してください（任意）</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setSolSel(SOLUTIONS.map((s) => s.k))} style={{ padding: '5px 12px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>すべて選択</button>
+              <button onClick={() => setSolSel([])} style={{ padding: '5px 12px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>選択をクリア</button>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 20 }}>
+            {SOLUTIONS.map((s) => {
+              const on = solSel.includes(s.k);
+              return (
+                <div key={s.k} onClick={() => setSolSel((p) => p.includes(s.k) ? p.filter((x) => x !== s.k) : [...p, s.k])}
+                style={{ background: on ? 'var(--green-50)' : 'white', border: `1px solid ${on ? 'var(--green-600)' : 'var(--zinc-200)'}`, borderRadius: 10, padding: '14px 16px', cursor: 'pointer', transition: 'all .15s' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: on ? 'var(--green-700)' : 'var(--zinc-800)' }}>{s.l}</span>
+                    <div style={{ width: 16, height: 16, borderRadius: 3, border: `1.5px solid ${on ? 'var(--green-600)' : 'var(--zinc-300)'}`, background: on ? 'var(--green-600)' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {on && <Icon d="M20 6L9 17l-5-5" size={10} color="white" />}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {s.tags.map((t) => <span key={t} style={{ fontSize: 10, background: 'var(--zinc-100)', color: 'var(--zinc-500)', padding: '2px 6px', borderRadius: 4 }}>{t}</span>)}
+                  </div>
+                </div>);
+
+            })}
+          </div>
+        </>}
+
+        {step === 4 && <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <span style={{ fontSize: 13, color: 'var(--zinc-500)' }}>6件の製造パートナーが見つかりました</span>
+            <button style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 7, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}><Icon d={IC.plus} size={12} color="var(--zinc-500)" />候補先を追加</button>
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}><Badge type="green">おすすめ</Badge><span style={{ color: 'var(--zinc-500)' }}>要件に合致する企業（{FACTORIES.filter((f) => f.match).length}件）</span></div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+            {FACTORIES.filter((f) => f.match).map((f) => <FactoryCard key={f.id} f={f} selected={selected.includes(f.id)} onToggle={() => togSel(f.id)} onDetail={() => setDetailFactory(f)} />)}
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}><Badge type="neutral">一部合致</Badge><span style={{ color: 'var(--zinc-500)' }}>要件に一部合致する企業（{FACTORIES.filter((f) => !f.match).length}件）</span></div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+            {FACTORIES.filter((f) => !f.match).map((f) => <FactoryCard key={f.id} f={f} selected={selected.includes(f.id)} onToggle={() => togSel(f.id)} onDetail={() => setDetailFactory(f)} />)}
+          </div>
+          {selected.length > 0 &&
+          <div style={{ position: 'sticky', bottom: 16, background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '14px 20px', boxShadow: '0 4px 16px rgba(0,0,0,.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: 'var(--zinc-500)' }}>{selected.length}社を選択中</span>
+              <button onClick={() => setRfqSent(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                <Icon d={IC.zap} size={14} color="white" />選択した工場へ相見積依頼
+              </button>
+            </div>
+          }
+          <button onClick={() => setStep(3)} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 7, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', marginTop: 8 }}>
+            <Icon d={IC.chevL} size={13} color="var(--zinc-500)" />前のページ
+          </button>
+        </>}
+
+        {step <= 3 &&
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+            <button onClick={() => step > 1 && setStep((s) => s - 1)} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '9px 16px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--zinc-600)', opacity: step === 1 ? .4 : 1 }} disabled={step === 1}>
+              <Icon d={IC.chevL} size={14} color="var(--zinc-500)" />前のステップ
+            </button>
+            <button onClick={() => setStep((s) => s + 1)} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '9px 20px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              {step < 3 ? '次のステップ' : '選択した領域で検索'}<Icon d={IC.arrow} size={14} color="white" />
+            </button>
+          </div>
+        }
+      </div>
+    </div>);
+
+};
+
+// ─── MAIN APP ─────────────────────────────────────────────────────
+const NAV = [
+{ id: 'dashboard', label: 'ダッシュボード', icon: IC.dash },
+{ id: 'agents', label: 'エージェント管理', icon: IC.bot },
+{ id: 'orders', label: '発注管理', icon: IC.package },
+{ id: 'alerts', label: 'アラート', icon: IC.bell, badge: 3 }];
+
+
+const WORKSPACES = [
+{ id: 'ws1', name: 'for Crafts, Inc.', role: '管理者', color: '#185C37' },
+{ id: 'ws2', name: 'プレミアム食品チーム', role: 'メンバー', color: '#0078D4' },
+{ id: 'ws3', name: '新商品開発チーム', role: 'メンバー', color: '#7C3AED' }];
+
+
+const App = () => {
+  const [screen, setScreen] = useState(() => localStorage.getItem('crft_screen') || 'dashboard');
+  const [tweaks, setTweaks] = useState({ ...TWEAK_DEFAULTS });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [wsId, setWsId] = useState('ws1');
+  const [wsOpen, setWsOpen] = useState(false);
+  const ws = WORKSPACES.find((w) => w.id === wsId) || WORKSPACES[0];
+
+  useEffect(() => {
+    localStorage.setItem('crft_screen', screen);
+  }, [screen]);
+
+  useEffect(() => {
+    window.__tweakBus = (t) => setTweaks({ ...t });
+    return () => {window.__tweakBus = null;};
+  }, []);
+
+  useEffect(() => {
+    if (!wsOpen) return;
+    const close = () => setWsOpen(false);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [wsOpen]);
+
+  const sidebarBg = tweaks.sidebarStyle === 'light' ? 'white' : '#0d1f14';
+  const sidebarFg = tweaks.sidebarStyle === 'light' ? 'var(--zinc-600)' : 'rgba(255,255,255,0.65)';
+  const sidebarActiveBg = tweaks.sidebarStyle === 'light' ? 'var(--green-50)' : 'rgba(255,255,255,0.1)';
+  const sidebarActiveFg = tweaks.sidebarStyle === 'light' ? 'var(--green-700)' : 'white';
+  const sidebarBorder = tweaks.sidebarStyle === 'light' ? '1px solid var(--zinc-200)' : 'none';
+
+  return (
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+      {/* Sidebar */}
+      <div style={{ width: sidebarCollapsed ? 64 : 220, flexShrink: 0, background: sidebarBg, border: sidebarBorder, borderRight: tweaks.sidebarStyle === 'light' ? '1px solid var(--zinc-200)' : 'none', display: 'flex', flexDirection: 'column', transition: `width .3s var(--ease)`, overflow: 'hidden' }}>
+        {/* Logo */}
+        <div style={{ padding: '18px 16px', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'space-between', borderBottom: tweaks.sidebarStyle === 'light' ? '1px solid var(--zinc-100)' : '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
+          {!sidebarCollapsed &&
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <img src="project/assets/CRFT_logo_typo_white.svg" style={{ height: 20, filter: tweaks.sidebarStyle === 'light' ? 'invert(1) sepia(1) saturate(5) hue-rotate(90deg)' : 'none' }} alt="CRFT" />
+            </div>
+          }
+          {sidebarCollapsed &&
+          <img src="project/assets/CRFT_logo.svg" style={{ height: 24 }} alt="CRFT" />
+          }
+          {!sidebarCollapsed &&
+          <button onClick={() => setSidebarCollapsed(true)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: sidebarFg, padding: 4, borderRadius: 4, display: 'flex' }}>
+              <Icon d={IC.chevL} size={14} color={sidebarFg} />
+            </button>
+          }
+        </div>
+
+        {/* Workspace switcher */}
+        {!sidebarCollapsed &&
+        <div style={{ margin: '10px 10px 4px', position: 'relative' }}>
+            <button onClick={() => setWsOpen((o) => !o)}
+          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 8, cursor: 'pointer', transition: 'all .15s' }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,.12)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,.07)'}>
+              <span style={{ width: 22, height: 22, borderRadius: 6, background: ws.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 11, fontWeight: 700, color: 'white' }}>{ws.name[0]}</span>
+              <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ws.name}</div>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,.4)' }}>{ws.role}</div>
+              </div>
+              <Icon d={IC.chevR} size={12} color="rgba(255,255,255,.4)" />
+            </button>
+            {wsOpen &&
+          <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.15)', zIndex: 100, overflow: 'hidden' }}>
+                <div style={{ padding: '8px 12px 4px', fontSize: 10, fontWeight: 700, color: 'var(--zinc-400)', letterSpacing: '.08em', textTransform: 'uppercase' }}>ワークスペース</div>
+                {WORKSPACES.map((w) =>
+            <div key={w.id} onClick={() => {setWsId(w.id);setWsOpen(false);}}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', cursor: 'pointer', background: wsId === w.id ? 'var(--green-50)' : 'white' }}
+            onMouseEnter={(e) => {if (wsId !== w.id) e.currentTarget.style.background = 'var(--zinc-50)';}}
+            onMouseLeave={(e) => {if (wsId !== w.id) e.currentTarget.style.background = 'white';}}>
+                    <span style={{ width: 24, height: 24, borderRadius: 6, background: w.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 11, fontWeight: 700, color: 'white' }}>{w.name[0]}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--zinc-800)' }}>{w.name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--zinc-400)' }}>{w.role}</div>
+                    </div>
+                    {wsId === w.id && <Icon d={IC.check} size={13} color="var(--green-600)" />}
+                  </div>
+            )}
+                <div style={{ borderTop: '1px solid var(--zinc-100)', padding: '8px 12px' }}>
+                  <button style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 8px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: 'var(--zinc-500)', borderRadius: 6 }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'var(--zinc-50)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'none'}>
+                    <Icon d={IC.plus} size={13} color="var(--zinc-400)" />新しいワークスペースを作成
+                  </button>
+                </div>
+              </div>
+          }
+          </div>
+        }
+
+        {/* Agent status pill */}
+        {!sidebarCollapsed &&
+        <div style={{ margin: '12px 12px 4px', padding: '8px 12px', background: 'rgba(255,214,1,0.12)', border: '1px solid rgba(255,214,1,0.25)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#FFD601', display: 'inline-block', flexShrink: 0 }} />
+            <span style={{ fontSize: 11, color: '#FFD601', fontWeight: 600 }}>{PRODUCTS.length}体のエージェント稼働中</span>
+          </div>
+        }
+
+        {/* Nav */}
+        <nav style={{ flex: 1, padding: '8px 8px', overflowY: 'auto' }}>
+          {NAV.map((n) =>
+          <button key={n.id} onClick={() => setScreen(n.id)}
+          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: sidebarCollapsed ? '10px' : '9px 12px', borderRadius: 8, border: 'none', background: n.accent && screen !== n.id ? 'rgba(255,214,1,0.12)' : screen === n.id ? sidebarActiveBg : 'transparent', color: n.accent ? '#FFD601' : screen === n.id ? sidebarActiveFg : sidebarFg, cursor: 'pointer', fontFamily: 'Noto Sans JP,sans-serif', fontSize: 13, fontWeight: screen === n.id || n.accent ? 600 : 400, marginBottom: 2, transition: 'all .15s', justifyContent: sidebarCollapsed ? 'center' : 'flex-start', position: 'relative' }}>
+              <Icon d={n.icon} size={16} color={screen === n.id ? sidebarActiveFg : sidebarFg} />
+              {!sidebarCollapsed && <span>{n.label}</span>}
+              {n.badge && !sidebarCollapsed &&
+            <span style={{ marginLeft: 'auto', background: 'var(--error)', color: 'white', borderRadius: 10, fontSize: 10, fontWeight: 700, padding: '1px 6px' }}>{n.badge}</span>
+            }
+              {n.badge && sidebarCollapsed &&
+            <span style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, background: 'var(--error)', borderRadius: '50%' }} />
+            }
+            </button>
+          )}
+        </nav>
+
+        {/* Collapse toggle */}
+        {sidebarCollapsed &&
+        <div style={{ padding: '12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <button onClick={() => setSidebarCollapsed(false)} style={{ width: '100%', background: 'transparent', border: 'none', cursor: 'pointer', color: sidebarFg, display: 'flex', justifyContent: 'center', padding: 6 }}>
+              <Icon d={IC.chevR} size={14} color={sidebarFg} />
+            </button>
+          </div>
+        }
+
+        {/* Bottom */}
+        {!sidebarCollapsed &&
+        <div style={{ padding: '8px 8px 12px', borderTop: tweaks.sidebarStyle === 'light' ? '1px solid var(--zinc-100)' : '1px solid rgba(255,255,255,0.06)' }}>
+            {/* New case button */}
+            <button onClick={() => setScreen('new')}
+          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderRadius: 8, border: '1px solid rgba(255,214,1,.3)', background: screen === 'new' ? 'rgba(255,214,1,.15)' : 'rgba(255,214,1,.08)', color: '#FFD601', cursor: 'pointer', fontFamily: 'Noto Sans JP,sans-serif', fontSize: 13, fontWeight: 600, marginBottom: 4, transition: 'all .15s' }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,214,1,.18)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = screen === 'new' ? 'rgba(255,214,1,.15)' : 'rgba(255,214,1,.08)'}>
+              <Icon d={IC.plus} size={15} color="#FFD601" />新規作成
+            </button>
+            <button onClick={() => setScreen('settings')}
+          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 8, border: 'none', background: 'transparent', color: sidebarFg, cursor: 'pointer', fontFamily: 'Noto Sans JP,sans-serif', fontSize: 13 }}>
+              <Icon d={IC.settings} size={16} color={sidebarFg} /><span>設定</span>
+            </button>
+          </div>
+        }
+      </div>
+
+      {/* Main content */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Header */}
+        <div style={{ height: 52, background: 'white', borderBottom: '1px solid var(--zinc-200)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--green-600)' }}>CRFT</span>
+            <span style={{ color: 'var(--zinc-300)' }}>·</span>
+            <span style={{ fontSize: 13, color: 'var(--zinc-500)' }}>調達AIエージェント</span>
+            <span style={{ color: 'var(--zinc-200)' }}>·</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--zinc-500)' }}><span style={{ width: 8, height: 8, borderRadius: 2, background: ws.color, display: 'inline-block' }} />{ws.name}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ fontSize: 12, color: 'var(--zinc-400)' }}>2026年4月20日</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: 'var(--green-50)', borderRadius: 6, border: '1px solid var(--green-200)' }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--success)', display: 'inline-block' }} />
+              <span style={{ fontSize: 11, color: 'var(--green-700)', fontWeight: 600 }}>24/7 稼働中</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Screen */}
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          {screen === 'dashboard' && <ScreenDashboard tweaks={tweaks} />}
+          {screen === 'new' && <ScreenNew />}
+          {screen === 'agents' && <ScreenAgents tweaks={tweaks} goToSettings={() => setScreen('settings')} />}
+          {screen === 'cost' && <ScreenAgents tweaks={tweaks} goToSettings={() => setScreen('settings')} />}
+          {screen === 'orders' && <ScreenOrders />}
+          {screen === 'settings' && <ScreenSettings />}
+          {screen === 'alerts' &&
+          <div style={{ padding: '28px 32px', overflowY: 'auto', height: '100%' }}>
+              <div style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--zinc-400)', marginBottom: 4 }}>ALERTS</div>
+              <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 20 }}>アラート一覧</h2>
+              {ALERTS.map((a) =>
+            <div key={a.id} style={{ background: 'white', border: `1px solid ${a.type === 'error' ? '#fca5a5' : '#fcd34d'}`, borderRadius: 12, padding: '18px 22px', marginBottom: 12, display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: a.type === 'error' ? 'var(--error-light)' : 'var(--warning-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Icon d={IC.alert} size={18} color={a.type === 'error' ? 'var(--error)' : 'var(--warning)'} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontWeight: 600, fontSize: 14 }}>{a.product}</span>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <span style={{ fontSize: 11, color: 'var(--zinc-400)' }}>{a.time}</span>
+                        <Badge type={a.type === 'error' ? 'red' : 'orange'}>{a.action}</Badge>
+                      </div>
+                    </div>
+                    <p style={{ fontSize: 13, color: 'var(--zinc-600)', lineHeight: 1.5 }}>{a.msg}</p>
+                  </div>
+                </div>
+            )}
+            </div>
+          }
+        </div>
+      </div>
+    </div>);
+
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+
+<style>
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+</style>
+</body>
+</html>

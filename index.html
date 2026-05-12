@@ -10,9 +10,9 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <style>
-@font-face { font-family:'Futura'; src:url('project/fonts/Futura-Bold.woff') format('woff'); font-weight:700; }
-@font-face { font-family:'Futura'; src:url('project/fonts/Futura-Medium.woff') format('woff'); font-weight:500; }
-@font-face { font-family:'Futura'; src:url('project/fonts/Futura-Book.woff') format('woff'); font-weight:400; }
+@font-face { font-family:'Futura'; src:url('fonts/Futura-Bold.woff') format('woff'); font-weight:700; }
+@font-face { font-family:'Futura'; src:url('fonts/Futura-Medium.woff') format('woff'); font-weight:500; }
+@font-face { font-family:'Futura'; src:url('fonts/Futura-Book.woff') format('woff'); font-weight:400; }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -136,6 +136,8 @@ const IC = {
   zap: "M13 2L3 14h9l-1 8 10-12h-9l1-8z",
   arrow: "M5 12h14M12 5l7 7-7 7",
   plus: "M12 5v14M5 12h14",
+  user: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
+  logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
   refresh: "M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15",
   x: "M18 6L6 18M6 6l12 12",
   bar: "M18 20V10M12 20V4M6 20v-6",
@@ -256,8 +258,153 @@ const KpiCard = ({ label, value, sub, icon, accent }) =>
   </div>;
 
 
+// ─── ACTION INBOX (aggregated urgent decisions) ─────────────────
+// Lazy-defined here; NEXT_ACTIONS_DATA is hoisted at runtime
+const ActionInbox = ({ goToAgent }) => {
+  const [dismissed, setDismissed] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('crft_inbox_dismissed') || '[]'); } catch { return []; }
+  });
+  const [toast, setToast] = useState('');
+  const flash = (m) => { setToast(m); setTimeout(() => setToast(''), 2200); };
+  const dismiss = (key) => { const next = [...dismissed, key]; setDismissed(next); localStorage.setItem('crft_inbox_dismissed', JSON.stringify(next)); };
+  const approve = (key, label) => { dismiss(key); flash(`${label}: ${key.split('::')[2]}`); };
+
+  const items = [];
+  PRODUCTS.forEach((p) => {
+    (NEXT_ACTIONS_DATA[p.id] || []).filter((a) => a.urgent).forEach((a) => {
+      const key = `${p.id}::${a.id}::${a.title}`;
+      if (!dismissed.includes(key)) items.push({ key, product: p, action: a });
+    });
+  });
+
+  if (items.length === 0) {
+    return (
+      <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '16px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--green-50)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon d={IC.check} size={15} color="var(--green-600)" />
+        </div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>すべて対応済み</div>
+          <div style={{ fontSize: 11, color: 'var(--zinc-500)' }}>承認待ちのエージェント判断はありません。エージェントは自律稼働中です。</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ background: 'linear-gradient(180deg, #fff 0%, #fffaf0 100%)', border: '1.5px solid #FFD601', borderRadius: 14, marginBottom: 20, overflow: 'hidden', boxShadow: '0 1px 3px rgba(255,214,1,.15)' }}>
+      <div style={{ padding: '14px 20px', borderBottom: '1px solid #fef3c7', display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(255,214,1,.08)' }}>
+        <div style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--zinc-900)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon d={IC.zap} size={14} color="#FFD601" />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--zinc-900)' }}>今すぐ判断 <span style={{ color: 'var(--error)', fontWeight: 800 }}>{items.length}件</span></div>
+          <div style={{ fontSize: 11, color: 'var(--zinc-500)' }}>エージェントがあなたの判断を待っています。1クリックで処理できます。</div>
+        </div>
+        <span style={{ fontSize: 11, color: 'var(--zinc-400)', fontFamily: 'ui-monospace,monospace' }}>↑↓ で移動 · A で承認</span>
+      </div>
+      {toast && <div style={{ padding: '8px 20px', background: 'var(--green-700)', color: 'white', fontSize: 12, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}><Icon d={IC.check} size={12} color="white"/>{toast}</div>}
+      <div>
+        {items.slice(0, 5).map((item, idx) => {
+          const a = item.action; const p = item.product;
+          const acColor = a.type === 'alert' ? 'var(--error)' : a.type === 'approve' ? 'var(--green-600)' : 'var(--yellow)';
+          return (
+            <div key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderTop: idx === 0 ? 'none' : '1px solid var(--zinc-100)', transition: 'background .15s' }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,214,1,.04)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+              <div style={{ width: 4, height: 38, borderRadius: 2, background: acColor, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                  <span style={{ fontSize: 10, fontFamily: 'Futura,sans-serif', fontWeight: 700, color: 'var(--green-700)', letterSpacing: '.06em' }}>{p.agentId}</span>
+                  <span style={{ fontSize: 11, color: 'var(--zinc-400)' }}>·</span>
+                  <span style={{ fontSize: 11, color: 'var(--zinc-500)' }}>{p.name}</span>
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--zinc-800)', marginBottom: 2 }}>{a.title}</div>
+                <div style={{ fontSize: 11, color: 'var(--zinc-500)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>{a.desc}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button onClick={() => approve(item.key, a.actions[0])} style={{ padding: '7px 14px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Icon d={IC.check} size={12} color="white" />{a.actions[0]}
+                </button>
+                <button onClick={() => approve(item.key, a.actions[1])} style={{ padding: '7px 12px', background: 'white', color: 'var(--zinc-600)', border: '1px solid var(--zinc-200)', borderRadius: 7, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>{a.actions[1]}</button>
+                <button onClick={() => goToAgent && goToAgent(p.id)} title="詳細を開く" style={{ padding: '7px 9px', background: 'white', color: 'var(--zinc-500)', border: '1px solid var(--zinc-200)', borderRadius: 7, cursor: 'pointer', display: 'flex' }}>
+                  <Icon d={IC.arrow} size={12} color="var(--zinc-500)" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {items.length > 5 && <div style={{ padding: '10px 20px', borderTop: '1px solid var(--zinc-100)', fontSize: 12, color: 'var(--zinc-500)', textAlign: 'center' }}>残り {items.length - 5} 件</div>}
+    </div>
+  );
+};
+
+// ─── COMMAND PALETTE (⌘K) ──────────────────────────────────────
+const CommandPalette = ({ open, onClose, onPick }) => {
+  const [q, setQ] = useState('');
+  const inputRef = useRef(null);
+  const [sel, setSel] = useState(0);
+  useEffect(() => { if (open) { setQ(''); setSel(0); setTimeout(() => inputRef.current?.focus(), 30); } }, [open]);
+
+  const items = [
+    { type: 'screen', id: 'dashboard', label: 'ダッシュボード', sub: 'すべての概況' },
+    { type: 'screen', id: 'agents', label: 'エージェント管理', sub: '商品ごとの詳細・指示' },
+    { type: 'screen', id: 'orders', label: '発注管理', sub: '進行中の発注・遅延' },
+    { type: 'screen', id: 'alerts', label: 'アラート一覧', sub: '要対応の警告' },
+    { type: 'screen', id: 'settings', label: '設定', sub: 'メール連携・テンプレート・ガイドライン' },
+    ...PRODUCTS.map((p) => ({ type: 'product', id: p.id, label: p.name, sub: `${p.agentId} · ${p.variant}` }))
+  ];
+  const filtered = q.trim() === '' ? items : items.filter((i) => (i.label + i.sub).toLowerCase().includes(q.toLowerCase()));
+  const safeSel = Math.min(sel, Math.max(0, filtered.length - 1));
+
+  const handleKey = (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(filtered.length - 1, s + 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(0, s - 1)); }
+    else if (e.key === 'Enter') { e.preventDefault(); const it = filtered[safeSel]; if (it) onPick(it); }
+    else if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+  };
+
+  if (!open) return null;
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', zIndex: 1000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '12vh' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 540, background: 'white', borderRadius: 14, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,.25)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--zinc-100)' }}>
+          <Icon d={IC.search} size={15} color="var(--zinc-400)" />
+          <input ref={inputRef} value={q} onChange={(e) => { setQ(e.target.value); setSel(0); }} onKeyDown={handleKey}
+            placeholder="商品・画面を検索... (例: 醤油, 発注)"
+            style={{ flex: 1, border: 'none', outline: 'none', fontSize: 15, fontFamily: 'inherit', background: 'transparent' }} />
+          <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--zinc-100)', borderRadius: 4, color: 'var(--zinc-500)', fontFamily: 'ui-monospace,monospace' }}>ESC</span>
+        </div>
+        <div style={{ maxHeight: 360, overflowY: 'auto', padding: '6px 0' }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--zinc-400)', fontSize: 13 }}>該当なし</div>
+          ) : filtered.map((it, i) => (
+            <div key={it.type + it.id} onClick={() => onPick(it)} onMouseEnter={() => setSel(i)}
+              style={{ padding: '10px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, background: i === safeSel ? 'var(--green-50)' : 'transparent' }}>
+              <div style={{ width: 26, height: 26, borderRadius: 7, background: it.type === 'product' ? 'var(--green-100)' : 'var(--zinc-100)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Icon d={it.type === 'product' ? IC.bot : IC.dash} size={12} color={it.type === 'product' ? 'var(--green-700)' : 'var(--zinc-500)'} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--zinc-800)' }}>{it.label}</div>
+                <div style={{ fontSize: 11, color: 'var(--zinc-400)' }}>{it.sub}</div>
+              </div>
+              {i === safeSel && <span style={{ fontSize: 10, padding: '2px 5px', background: 'var(--zinc-100)', borderRadius: 4, color: 'var(--zinc-500)', fontFamily: 'ui-monospace,monospace' }}>↵</span>}
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: '8px 18px', background: 'var(--zinc-50)', borderTop: '1px solid var(--zinc-100)', display: 'flex', gap: 14, fontSize: 11, color: 'var(--zinc-500)' }}>
+          <span><kbd style={{ fontFamily: 'ui-monospace,monospace', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>↑↓</kbd> 移動</span>
+          <span><kbd style={{ fontFamily: 'ui-monospace,monospace', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>↵</kbd> 開く</span>
+          <span><kbd style={{ fontFamily: 'ui-monospace,monospace', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 3, padding: '1px 5px', fontSize: 10 }}>⌘K</kbd> 開閉</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── SCREEN: DASHBOARD ────────────────────────────────────────────
-const ScreenDashboard = ({ tweaks }) => {
+const ScreenDashboard = ({ tweaks, goToAgent }) => {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!tweaks.showFeed) return;
@@ -275,12 +422,22 @@ const ScreenDashboard = ({ tweaks }) => {
 
   return (
     <div style={{ padding: '28px 32px', overflowY: 'auto', height: '100%' }}>
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <span style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--zinc-400)' }}>OVERVIEW</span>
+      <div style={{ marginBottom: 18, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--zinc-400)' }}>OVERVIEW</span>
+          </div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--zinc-900)', letterSpacing: '-0.01em' }}>調達AIエージェント ダッシュボード</h1>
         </div>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--zinc-900)', letterSpacing: '-0.01em' }}>調達AIエージェント ダッシュボード</h1>
+        <button onClick={() => window.dispatchEvent(new CustomEvent('crft:open-cmdk'))} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: 'var(--zinc-500)' }}>
+          <Icon d={IC.search} size={13} color="var(--zinc-400)" />
+          <span>商品・画面を検索</span>
+          <span style={{ marginLeft: 4, padding: '1px 5px', background: 'var(--zinc-100)', borderRadius: 3, fontFamily: 'ui-monospace,monospace', fontSize: 10 }}>⌘K</span>
+        </button>
       </div>
+
+      {/* Action Inbox — aggregated urgent decisions, one-click handling */}
+      <ActionInbox goToAgent={goToAgent} />
 
       {/* KPIs */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 24 }}>
@@ -679,9 +836,29 @@ const AGENT_PERMS = [
 { k: 'order', l: '発注の自動実行', desc: '承認済み条件に基づいた発注を自律実行する（要閾値）', def: false }];
 
 
-const ScreenAgents = ({ tweaks, goToSettings }) => {
-  const [selectedId, setSelectedId] = useState('p1');
-  const [tab, setTab] = useState('compare');
+const ScreenAgents = ({ tweaks, goToSettings, initialId }) => {
+  const [selectedId, setSelectedId] = useState(initialId || 'p1');
+  const initialUrgent = ((NEXT_ACTIONS_DATA[initialId || 'p1'] || []).filter((a) => a.urgent).length) > 0;
+  const [tab, setTab] = useState(initialUrgent ? 'next' : 'compare');
+  // sync selection if parent navigates to a specific product
+  useEffect(() => { if (initialId && initialId !== selectedId) { setSelectedId(initialId); const u = ((NEXT_ACTIONS_DATA[initialId] || []).filter((a) => a.urgent).length) > 0; setTab(u ? 'next' : 'compare'); } }, [initialId]);
+  // Keyboard: J/K switch agent, 1-4 switch tabs
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const tag = (e.target && e.target.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
+      const idx = PRODUCTS.findIndex((p) => p.id === selectedId);
+      if (e.key === 'j' || e.key === 'J') { e.preventDefault(); const n = PRODUCTS[(idx + 1) % PRODUCTS.length]; setSelectedId(n.id); }
+      else if (e.key === 'k' || e.key === 'K') { e.preventDefault(); const n = PRODUCTS[(idx - 1 + PRODUCTS.length) % PRODUCTS.length]; setSelectedId(n.id); }
+      else if (e.key === '1') setTab('compare');
+      else if (e.key === '2') setTab('detail');
+      else if (e.key === '3') setTab('timeline');
+      else if (e.key === '4') setTab('next');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedId]);
   const [emailConnected, setEmailConnected] = useState(() => localStorage.getItem('crft_email') === '1');
   const [perms, setPerms] = useState(() => {
     const saved = localStorage.getItem('crft_perms');
@@ -773,7 +950,7 @@ const ScreenAgents = ({ tweaks, goToSettings }) => {
           <span style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--zinc-400)' }}>商品エージェント</span>
         </div>
         {PRODUCTS.map((p) =>
-        <div key={p.id} onClick={() => {setSelectedId(p.id);setTab('compare');}}
+        <div key={p.id} onClick={() => {setSelectedId(p.id); const u = ((NEXT_ACTIONS_DATA[p.id] || []).filter((a) => a.urgent).length) > 0; setTab(u ? 'next' : 'compare');}}
         style={{ padding: '14px 18px', borderBottom: '1px solid var(--zinc-50)', cursor: 'pointer', background: selectedId === p.id ? 'var(--green-50)' : 'transparent', borderLeft: selectedId === p.id ? '3px solid var(--green-600)' : '3px solid transparent', transition: 'all .15s' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: selectedId === p.id ? 'var(--green-700)' : 'var(--zinc-800)' }}>{p.name}</span>
@@ -1114,8 +1291,9 @@ const AGENT_PERMS_FULL = [
 { k: 'order', l: '発注の自動実行', desc: '承認済み条件に基づいた発注を自律実行する（要閾値）', def: false }];
 
 
-const ScreenSettings = () => {
-  const [section, setSection] = useState('agent');
+const ScreenSettings = ({ initialSection }) => {
+  const [section, setSection] = useState(initialSection || 'agent');
+  useEffect(() => { if (initialSection) setSection(initialSection); }, [initialSection]);
 
   // Agent settings state
   const [emailConnected, setEmailConnected] = useState(() => localStorage.getItem('crft_email') === '1');
@@ -1185,6 +1363,7 @@ const ScreenSettings = () => {
 
   const SECTIONS = [
   { k: 'agent', l: 'エージェント設定', icon: IC.zap, desc: 'メール連携と自律実行の許可' },
+  { k: 'users', l: 'ユーザー管理', icon: IC.user, desc: 'メンバー追加・権限編集・アカウント情報' },
   { k: 'template', l: 'メールテンプレート', icon: IC.arrow, desc: 'エージェントの送信文面を編集' },
   { k: 'guide', l: 'ガイドライン', icon: IC.check, desc: '調達基準・原価率・監視基準' }];
 
@@ -1214,6 +1393,52 @@ const ScreenSettings = () => {
         {toast &&
         <div style={{ position: 'absolute', top: 20, right: 24, background: 'var(--zinc-900)', color: 'white', padding: '10px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8, zIndex: 100, boxShadow: '0 4px 12px rgba(0,0,0,.15)' }}>
             <Icon d={IC.check} size={14} color="var(--green-400)" />{toast}
+          </div>
+        }
+
+        {section === 'users' &&
+        <div style={{ maxWidth: 860 }}>
+            <div style={{ marginBottom: 24 }}>
+              <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>ユーザー管理</h2>
+              <p style={{ fontSize: 13, color: 'var(--zinc-500)' }}>このワークスペースのメンバーを管理します。管理者は権限の変更・招待・削除ができます。</p>
+            </div>
+            <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '20px 22px', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid var(--zinc-100)' }}>
+                <div style={{ width: 48, height: 48, borderRadius: 12, background: 'var(--green-600)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 18 }}>K</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 15, fontWeight: 600 }}>あなた · 木村 健太</div>
+                  <div style={{ fontSize: 12, color: 'var(--zinc-500)' }}>kimura@for-crafts.com · 管理者</div>
+                </div>
+                <button style={{ padding: '7px 12px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 7, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>プロフィール編集</button>
+                <button style={{ padding: '7px 12px', background: 'white', border: '1px solid var(--error)', color: 'var(--error)', borderRadius: 7, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>ログアウト</button>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>メンバー <span style={{ color: 'var(--zinc-400)', fontWeight: 400 }}>(5人)</span></div>
+                <button style={{ padding: '7px 12px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 7, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}><Icon d={IC.plus} size={12} color="white" />メンバーを招待</button>
+              </div>
+              {[
+                { n: '佐藤 美咲', e: 'sato@for-crafts.com', r: '管理者', c: '#7C3AED' },
+                { n: '田中 拓也', e: 'tanaka@for-crafts.com', r: '編集者', c: '#0078D4' },
+                { n: '山本 葵', e: 'yamamoto@for-crafts.com', r: '編集者', c: '#D97757' },
+                { n: '鈴木 大輔', e: 'suzuki@for-crafts.com', r: '閲覧のみ', c: '#185C37' },
+              ].map((u, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: i === 0 ? 'none' : '1px solid var(--zinc-50)' }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: u.c, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13 }}>{u.n[0]}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>{u.n}</div>
+                    <div style={{ fontSize: 11, color: 'var(--zinc-500)' }}>{u.e}</div>
+                  </div>
+                  <select defaultValue={u.r} style={{ padding: '5px 8px', fontSize: 12, border: '1px solid var(--zinc-200)', borderRadius: 6, fontFamily: 'inherit', background: 'white' }}>
+                    <option>管理者</option><option>編集者</option><option>閲覧のみ</option>
+                  </select>
+                  <button style={{ padding: '5px 8px', background: 'transparent', border: 'none', color: 'var(--zinc-400)', cursor: 'pointer', fontSize: 12 }}>削除</button>
+                </div>
+              ))}
+            </div>
+            <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '18px 22px' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>権限について</div>
+              <div style={{ fontSize: 12, color: 'var(--zinc-500)', lineHeight: 1.6 }}>管理者: 全機能・メンバー管理 / 編集者: エージェント運用・発注 / 閲覧のみ: ダッシュボード閲覧</div>
+            </div>
           </div>
         }
 
@@ -2006,10 +2231,132 @@ const FactoryCard = ({ f, selected, onToggle, onDetail }) =>
     </div>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <span style={{ fontSize: 11, color: 'var(--zinc-400)' }}>設立: {f.year}年</span>
-      <button onClick={onDetail} style={{ fontSize: 11, color: 'var(--green-600)', fontWeight: 600, background: 'none', border: '1px solid var(--green-200)', borderRadius: 5, padding: '3px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>詳細を見る</button>
+      {(() => {
+        const initials = f.name.replace(/[株式会社\s\(\)]/g, '').slice(0, 2).toUpperCase();
+        const url = `supplier-detail.html?name=${encodeURIComponent(f.name)}&tag=${encodeURIComponent(f.location || '')}&rating=${f.rating || ''}&initials=${encodeURIComponent(initials)}`;
+        return <a href={url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ fontSize: 11, color: 'var(--green-600)', fontWeight: 600, background: 'none', border: '1px solid var(--green-200)', borderRadius: 5, padding: '3px 10px', textDecoration: 'none', display: 'inline-block' }}>詳細を見る ↗</a>;
+      })()}
     </div>
   </div>;
 
+
+const Fld = ({ label, req, children }) =>
+  <div style={{ marginBottom: 16 }}>
+    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--zinc-700)', marginBottom: 6 }}>{label}{req && <span style={{ color: 'var(--error)', marginLeft: 2 }}>*</span>}</div>
+    {children}
+  </div>;
+
+const PKG_ICONS = {
+  pet: <svg viewBox="0 0 40 56" fill="none"><rect x="13" y="2" width="14" height="5" rx="2" fill="currentColor" opacity=".3" /><path d="M10 10 Q8 14 7 20 L7 48 Q7 52 10 52 L30 52 Q33 52 33 48 L33 20 Q32 14 30 10 Z" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".1" /><ellipse cx="20" cy="10" rx="8" ry="3" fill="currentColor" opacity=".4" /></svg>,
+  can: <svg viewBox="0 0 40 56" fill="none"><ellipse cx="20" cy="8" rx="13" ry="4" fill="currentColor" opacity=".35" /><rect x="7" y="8" width="26" height="38" fill="currentColor" opacity=".1" stroke="currentColor" strokeWidth="2" /><ellipse cx="20" cy="46" rx="13" ry="4" fill="currentColor" opacity=".35" /></svg>,
+  pouch: <svg viewBox="0 0 44 56" fill="none"><path d="M8 8 Q8 4 14 4 L30 4 Q36 4 36 8 L38 46 Q38 52 22 52 Q6 52 6 46 Z" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".1" /><ellipse cx="22" cy="34" rx="10" ry="7" fill="currentColor" opacity=".15" /></svg>,
+  glass: <svg viewBox="0 0 40 56" fill="none"><rect x="14" y="2" width="12" height="6" rx="2" fill="currentColor" opacity=".3" /><path d="M12 10 Q8 16 8 22 L8 46 Q8 52 12 52 L28 52 Q32 52 32 46 L32 22 Q32 16 28 10 Z" stroke="currentColor" strokeWidth="1.5" fill="currentColor" opacity=".08" /><ellipse cx="20" cy="10" rx="7" ry="2.5" fill="currentColor" opacity=".35" /></svg>,
+  carton: <svg viewBox="0 0 48 48" fill="none"><path d="M6 14 L24 6 L42 14 L42 38 L24 46 L6 38 Z" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".08" /><path d="M6 14 L24 22 L42 14" stroke="currentColor" strokeWidth="1.5" opacity=".4" /><path d="M24 22 L24 46" stroke="currentColor" strokeWidth="1.5" opacity=".4" /></svg>,
+  cup: <svg viewBox="0 0 44 44" fill="none"><path d="M6 8 L8 38 Q8 42 22 42 Q36 42 36 38 L38 8 Z" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".1" /><ellipse cx="22" cy="8" rx="16" ry="4" fill="currentColor" opacity=".3" /></svg>,
+  tube: <svg viewBox="0 0 36 56" fill="none"><rect x="10" y="2" width="16" height="8" rx="4" fill="currentColor" opacity=".3" /><rect x="7" y="10" width="22" height="38" rx="4" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".1" /></svg>,
+  zipper: <svg viewBox="0 0 44 52" fill="none"><rect x="4" y="8" width="36" height="40" rx="3" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".08" /><rect x="4" y="8" width="36" height="8" rx="3" fill="currentColor" opacity=".2" /></svg>
+};
+
+const PKG_OPTIONS = [
+  { k: 'pet250sq', icon: 'pet', l: 'PET 250ml 角' },
+  { k: 'pet250rd', icon: 'pet', l: 'PET 250ml 円' },
+  { k: 'pet350sq', icon: 'pet', l: 'PET 350ml 角' },
+  { k: 'pet350rd', icon: 'pet', l: 'PET 350ml 円' },
+  { k: 'pet500sq', icon: 'pet', l: 'PET 500ml 角' },
+  { k: 'pet500rd', icon: 'pet', l: 'PET 500ml 円' },
+  { k: 'pet1000', icon: 'pet', l: 'PET 1L 円' },
+  { k: 'can190', icon: 'can', l: 'アルミ缶 190ml' },
+  { k: 'can250', icon: 'can', l: 'アルミ缶 250ml' },
+  { k: 'can350', icon: 'can', l: 'アルミ缶 350ml' },
+  { k: 'can500', icon: 'can', l: 'アルミ缶 500ml' },
+  { k: 'pouch100', icon: 'pouch', l: 'パウチ 100g' },
+  { k: 'pouch200', icon: 'pouch', l: 'パウチ 200g' },
+  { k: 'pouch500', icon: 'pouch', l: 'スタンドパウチ 500g' },
+  { k: 'glass200', icon: 'glass', l: 'ガラス瓶 200ml' },
+  { k: 'glass500', icon: 'glass', l: 'ガラス瓶 500ml' },
+  { k: 'carton200', icon: 'carton', l: '紙カートン 200ml' },
+  { k: 'carton1000', icon: 'carton', l: '紙カートン 1L' },
+  { k: 'cup180', icon: 'cup', l: 'カップ 180ml' },
+  { k: 'cup250', icon: 'cup', l: 'カップ 250ml' },
+  { k: 'tray', icon: 'cup', l: 'トレイ' },
+  { k: 'tube50', icon: 'tube', l: 'チューブ 50g' },
+  { k: 'tube100', icon: 'tube', l: 'チューブ 100g' },
+  { k: 'zipper100', icon: 'zipper', l: 'ジッパーバッグ 100g' },
+  { k: 'zipper250', icon: 'zipper', l: 'ジッパーバッグ 250g' },
+  { k: 'zipper500', icon: 'zipper', l: 'ジッパーバッグ 500g' }
+];
+
+const PackagingMultiSelect = ({ value, onChange, inS }) => {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const ref = useRef(null);
+  useEffect(() => {
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+  const selected = value || [];
+  const toggle = (k) => onChange(selected.includes(k) ? selected.filter(x => x !== k) : [...selected, k]);
+  const filtered = PKG_OPTIONS.filter(o => o.l.toLowerCase().includes(q.toLowerCase()));
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <div onClick={() => setOpen(o => !o)}
+        style={{ ...inS, minHeight: 42, padding: '6px 10px', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
+        {selected.length === 0 ? (
+          <span style={{ color: 'var(--zinc-400)', fontSize: 13 }}>パッケージ形式を選択（複数選択可）</span>
+        ) : (
+          selected.map(k => {
+            const opt = PKG_OPTIONS.find(o => o.k === k);
+            if (!opt) return null;
+            return (
+              <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 4px 4px 8px', background: 'var(--green-50)', border: '1px solid var(--green-200)', borderRadius: 6, fontSize: 12, color: 'var(--green-700)', fontWeight: 500 }}>
+                <span style={{ width: 14, height: 14, color: 'var(--green-600)', display: 'inline-flex' }}>{PKG_ICONS[opt.icon]}</span>
+                {opt.l}
+                <button onClick={(e) => { e.stopPropagation(); toggle(k); }}
+                  style={{ width: 16, height: 16, borderRadius: 4, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--green-700)', padding: 0 }}>
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+              </span>
+            );
+          })
+        )}
+        <span style={{ marginLeft: 'auto', color: 'var(--zinc-400)', display: 'flex', alignItems: 'center', paddingRight: 4 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}><path d="M6 9l6 6 6-6"/></svg>
+        </span>
+      </div>
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.08)', zIndex: 50, maxHeight: 320, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: 8, borderBottom: '1px solid var(--zinc-100)' }}>
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="検索..."
+              autoFocus
+              style={{ width: '100%', padding: '7px 10px', border: '1px solid var(--zinc-200)', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
+          </div>
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            {filtered.length === 0 && (
+              <div style={{ padding: 16, textAlign: 'center', fontSize: 12, color: 'var(--zinc-400)' }}>該当するパッケージがありません</div>
+            )}
+            {filtered.map(opt => {
+              const on = selected.includes(opt.k);
+              return (
+                <div key={opt.k} onClick={() => toggle(opt.k)}
+                  style={{ padding: '9px 12px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', background: on ? 'var(--green-50)' : 'white', borderBottom: '1px solid var(--zinc-50)' }}
+                  onMouseEnter={(e) => { if (!on) e.currentTarget.style.background = 'var(--zinc-50)'; }}
+                  onMouseLeave={(e) => { if (!on) e.currentTarget.style.background = 'white'; }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 4, border: `1.5px solid ${on ? 'var(--green-600)' : 'var(--zinc-300)'}`, background: on ? 'var(--green-600)' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {on && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5"><path d="M5 12l5 5 9-11"/></svg>}
+                  </div>
+                  <span style={{ width: 22, height: 22, color: on ? 'var(--green-600)' : 'var(--zinc-500)', display: 'inline-flex', flexShrink: 0 }}>{PKG_ICONS[opt.icon]}</span>
+                  <span style={{ fontSize: 13, color: on ? 'var(--green-700)' : 'var(--zinc-800)', fontWeight: on ? 600 : 400 }}>{opt.l}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const ScreenNew = () => {
   const [step, setStep] = useState(1);
@@ -2048,11 +2395,6 @@ const ScreenNew = () => {
 
 
   const inS = { width: '100%', padding: '9px 12px', border: '1px solid var(--zinc-200)', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', color: 'var(--zinc-800)', background: 'white', outline: 'none', boxSizing: 'border-box' };
-  const Fld = ({ label, req, children }) =>
-  <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--zinc-700)', marginBottom: 6 }}>{label}{req && <span style={{ color: 'var(--error)', marginLeft: 2 }}>*</span>}</div>
-      {children}
-    </div>;
 
 
   if (rfqSent) return (
@@ -2184,32 +2526,10 @@ const ScreenNew = () => {
           <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 12, padding: '20px 24px', marginBottom: 12 }}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>パッケージング要件</div>
             <Fld label="Packaging Format" req>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 10 }}>
-                {[
-                { k: 'pet', l: 'PETボトル', svg: <svg viewBox="0 0 40 56" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="13" y="2" width="14" height="5" rx="2" fill="currentColor" opacity=".3" /><path d="M10 10 Q8 14 7 20 L7 48 Q7 52 10 52 L30 52 Q33 52 33 48 L33 20 Q32 14 30 10 Z" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".1" /><ellipse cx="20" cy="10" rx="8" ry="3" fill="currentColor" opacity=".4" /><rect x="9" y="26" width="22" height="2" rx="1" fill="currentColor" opacity=".3" /></svg> },
-                { k: 'can', l: 'アルミ缶', svg: <svg viewBox="0 0 40 56" fill="none"><ellipse cx="20" cy="8" rx="13" ry="4" fill="currentColor" opacity=".35" /><rect x="7" y="8" width="26" height="38" fill="currentColor" opacity=".1" stroke="currentColor" strokeWidth="2" /><ellipse cx="20" cy="46" rx="13" ry="4" fill="currentColor" opacity=".35" /><rect x="9" y="18" width="22" height="12" fill="currentColor" opacity=".15" /></svg> },
-                { k: 'pouch', l: 'パウチ', svg: <svg viewBox="0 0 44 56" fill="none"><path d="M8 8 Q8 4 14 4 L30 4 Q36 4 36 8 L38 46 Q38 52 22 52 Q6 52 6 46 Z" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".1" /><rect x="10" y="16" width="24" height="2" rx="1" fill="currentColor" opacity=".3" /><ellipse cx="22" cy="34" rx="10" ry="7" fill="currentColor" opacity=".15" /></svg> },
-                { k: 'glass', l: 'ガラス瓶', svg: <svg viewBox="0 0 40 56" fill="none"><rect x="14" y="2" width="12" height="6" rx="2" fill="currentColor" opacity=".3" /><path d="M12 10 Q8 16 8 22 L8 46 Q8 52 12 52 L28 52 Q32 52 32 46 L32 22 Q32 16 28 10 Z" stroke="currentColor" strokeWidth="1.5" fill="currentColor" opacity=".08" /><ellipse cx="20" cy="10" rx="7" ry="2.5" fill="currentColor" opacity=".35" /><path d="M10 30 Q20 26 30 30" stroke="currentColor" strokeWidth="1" opacity=".3" /></svg> },
-                { k: 'carton', l: 'カートン', svg: <svg viewBox="0 0 48 48" fill="none"><path d="M6 14 L24 6 L42 14 L42 38 L24 46 L6 38 Z" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".08" /><path d="M6 14 L24 22 L42 14" stroke="currentColor" strokeWidth="1.5" opacity=".4" /><path d="M24 22 L24 46" stroke="currentColor" strokeWidth="1.5" opacity=".4" /></svg> },
-                { k: 'cup', l: 'カップ/トレイ', svg: <svg viewBox="0 0 44 44" fill="none"><path d="M6 8 L8 38 Q8 42 22 42 Q36 42 36 38 L38 8 Z" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".1" /><ellipse cx="22" cy="8" rx="16" ry="4" fill="currentColor" opacity=".3" /><rect x="10" y="18" width="24" height="2" rx="1" fill="currentColor" opacity=".25" /></svg> },
-                { k: 'tube', l: 'チューブ', svg: <svg viewBox="0 0 36 56" fill="none"><rect x="10" y="2" width="16" height="8" rx="4" fill="currentColor" opacity=".3" /><rect x="7" y="10" width="22" height="38" rx="4" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".1" /><rect x="9" y="20" width="18" height="3" rx="1.5" fill="currentColor" opacity=".2" /></svg> },
-                { k: 'zipper', l: 'ジッパーバッグ', svg: <svg viewBox="0 0 44 52" fill="none"><rect x="4" y="8" width="36" height="40" rx="3" stroke="currentColor" strokeWidth="2" fill="currentColor" opacity=".08" /><rect x="4" y="8" width="36" height="8" rx="3" fill="currentColor" opacity=".2" /><rect x="8" y="11" width="28" height="2" rx="1" fill="currentColor" opacity=".4" /></svg> }].
-                map((pkg) => {
-                  const on = form.pkg === pkg.k;
-                  return (
-                    <div key={pkg.k} onClick={() => set('pkg', on ? '' : pkg.k)}
-                    style={{ border: `1.5px solid ${on ? 'var(--green-600)' : 'var(--zinc-200)'}`, borderRadius: 10, padding: '10px 6px 8px', cursor: 'pointer', background: on ? 'var(--green-50)' : 'white', textAlign: 'center', transition: 'all .15s', userSelect: 'none' }}>
-                      <div style={{ color: on ? 'var(--green-600)' : 'var(--zinc-400)', width: 36, height: 36, margin: '0 auto 6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        {pkg.svg}
-                      </div>
-                      <div style={{ fontSize: 11, fontWeight: on ? 600 : 400, color: on ? 'var(--green-700)' : 'var(--zinc-600)', lineHeight: 1.3 }}>{pkg.l}</div>
-                    </div>);
-
-                })}
-              </div>
+              <PackagingMultiSelect value={form.pkgList || []} onChange={(v) => set('pkgList', v)} inS={inS} />
               <input value={form.pkgCustom || ''} onChange={(e) => set('pkgCustom', e.target.value)}
-              placeholder="その他・詳細仕様があれば記入..."
-              style={{ ...inS, marginTop: 4, fontSize: 12, color: 'var(--zinc-600)' }} />
+                placeholder="その他・詳細仕様があれば記入..."
+                style={{ ...inS, marginTop: 8, fontSize: 12, color: 'var(--zinc-600)' }} />
             </Fld>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderTop: '1px solid var(--zinc-100)', marginTop: 4 }}>
               <div>
@@ -2332,7 +2652,25 @@ const App = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [wsId, setWsId] = useState('ws1');
   const [wsOpen, setWsOpen] = useState(false);
+  const [cmdkOpen, setCmdkOpen] = useState(false);
+  const [agentInitialId, setAgentInitialId] = useState(null);
+  const [settingsSection, setSettingsSection] = useState(null);
+  const [loggedOut, setLoggedOut] = useState(false);
   const ws = WORKSPACES.find((w) => w.id === wsId) || WORKSPACES[0];
+
+  const goToAgent = (id) => { setAgentInitialId(id); setScreen('agents'); };
+
+  // Global keyboard: ⌘K / Ctrl+K opens palette, G then D/A/O navigates
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setCmdkOpen((o) => !o); }
+      else if (e.key === 'Escape' && cmdkOpen) { setCmdkOpen(false); }
+    };
+    const openHandler = () => setCmdkOpen(true);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('crft:open-cmdk', openHandler);
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('crft:open-cmdk', openHandler); };
+  }, [cmdkOpen]);
 
   useEffect(() => {
     localStorage.setItem('crft_screen', screen);
@@ -2357,6 +2695,21 @@ const App = () => {
   const sidebarBorder = tweaks.sidebarStyle === 'light' ? '1px solid var(--zinc-200)' : 'none';
 
   return (
+    <React.Fragment>
+    <CommandPalette open={cmdkOpen} onClose={() => setCmdkOpen(false)} onPick={(it) => { setCmdkOpen(false); if (it.type === 'screen') setScreen(it.id); else if (it.type === 'product') goToAgent(it.id); }} />
+    {loggedOut && (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(13,31,20,.96)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 380, background: 'white', borderRadius: 16, padding: '32px 28px', textAlign: 'center', boxShadow: '0 24px 60px rgba(0,0,0,.4)' }}>
+          <div style={{ width: 56, height: 56, borderRadius: 14, background: 'var(--green-50)', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon d={IC.logout} size={26} color="var(--green-600)" />
+          </div>
+          <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>ログアウトしました</h2>
+          <p style={{ fontSize: 13, color: 'var(--zinc-500)', marginBottom: 20, lineHeight: 1.5 }}>エージェントは引き続き24/7で稼働しています。<br />再ログインして作業を続けてください。</p>
+          <button onClick={() => setLoggedOut(false)} style={{ width: '100%', padding: '12px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 9, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 8 }}>kimura@for-crafts.com で再ログイン</button>
+          <button onClick={() => setLoggedOut(false)} style={{ width: '100%', padding: '10px', background: 'white', color: 'var(--zinc-500)', border: '1px solid var(--zinc-200)', borderRadius: 9, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>別のアカウントでログイン</button>
+        </div>
+      </div>
+    )}
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       {/* Sidebar */}
       <div style={{ width: sidebarCollapsed ? 64 : 220, flexShrink: 0, background: sidebarBg, border: sidebarBorder, borderRight: tweaks.sidebarStyle === 'light' ? '1px solid var(--zinc-200)' : 'none', display: 'flex', flexDirection: 'column', transition: `width .3s var(--ease)`, overflow: 'hidden' }}>
@@ -2364,11 +2717,11 @@ const App = () => {
         <div style={{ padding: '18px 16px', display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'space-between', borderBottom: tweaks.sidebarStyle === 'light' ? '1px solid var(--zinc-100)' : '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
           {!sidebarCollapsed &&
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <img src="project/assets/CRFT_logo_typo_white.svg" style={{ height: 20, filter: tweaks.sidebarStyle === 'light' ? 'invert(1) sepia(1) saturate(5) hue-rotate(90deg)' : 'none' }} alt="CRFT" />
+              <img src="assets/CRFT_logo_typo_white.svg" style={{ height: 20, filter: tweaks.sidebarStyle === 'light' ? 'invert(1) sepia(1) saturate(5) hue-rotate(90deg)' : 'none' }} alt="CRFT" />
             </div>
           }
           {sidebarCollapsed &&
-          <img src="project/assets/CRFT_logo.svg" style={{ height: 24 }} alt="CRFT" />
+          <img src="assets/CRFT_logo.svg" style={{ height: 24 }} alt="CRFT" />
           }
           {!sidebarCollapsed &&
           <button onClick={() => setSidebarCollapsed(true)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: sidebarFg, padding: 4, borderRadius: 4, display: 'flex' }}>
@@ -2412,6 +2765,35 @@ const App = () => {
               onMouseEnter={(e) => e.currentTarget.style.background = 'var(--zinc-50)'}
               onMouseLeave={(e) => e.currentTarget.style.background = 'none'}>
                     <Icon d={IC.plus} size={13} color="var(--zinc-400)" />新しいワークスペースを作成
+                  </button>
+                </div>
+                {/* Account / Admin */}
+                <div style={{ borderTop: '1px solid var(--zinc-100)', padding: '10px 12px 6px', background: 'var(--zinc-50)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 4px 10px' }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--green-600)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>K</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--zinc-800)' }}>木村 健太</div>
+                      <div style={{ fontSize: 11, color: 'var(--zinc-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>kimura@for-crafts.com</div>
+                    </div>
+                    <span style={{ fontSize: 10, padding: '2px 6px', background: 'var(--green-100)', color: 'var(--green-700)', borderRadius: 4, fontWeight: 700 }}>管理者</span>
+                  </div>
+                  <button onClick={(e) => { e.stopPropagation(); setWsOpen(false); setSettingsSection('users'); setScreen('settings'); }}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 8px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: 'var(--zinc-700)', marginBottom: 4 }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--green-50)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'white'}>
+                    <Icon d={IC.user} size={13} color="var(--zinc-500)" /><span>ユーザー管理</span>
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); setWsOpen(false); setSettingsSection('agent'); setScreen('settings'); }}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 8px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: 'var(--zinc-700)', marginBottom: 4 }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--green-50)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'white'}>
+                    <Icon d={IC.settings} size={13} color="var(--zinc-500)" /><span>設定</span>
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); setWsOpen(false); setLoggedOut(true); }}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 8px', background: 'white', border: '1px solid var(--zinc-200)', color: 'var(--error)', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600 }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--error-light)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'white'}>
+                    <Icon d={IC.logout} size={13} color="var(--error)" /><span>ログアウト</span>
                   </button>
                 </div>
               </div>
@@ -2493,12 +2875,12 @@ const App = () => {
 
         {/* Screen */}
         <div style={{ flex: 1, overflow: 'hidden' }}>
-          {screen === 'dashboard' && <ScreenDashboard tweaks={tweaks} />}
+          {screen === 'dashboard' && <ScreenDashboard tweaks={tweaks} goToAgent={goToAgent} />}
           {screen === 'new' && <ScreenNew />}
-          {screen === 'agents' && <ScreenAgents tweaks={tweaks} goToSettings={() => setScreen('settings')} />}
-          {screen === 'cost' && <ScreenAgents tweaks={tweaks} goToSettings={() => setScreen('settings')} />}
+          {screen === 'agents' && <ScreenAgents tweaks={tweaks} goToSettings={() => setScreen('settings')} initialId={agentInitialId} />}
+          {screen === 'cost' && <ScreenAgents tweaks={tweaks} goToSettings={() => setScreen('settings')} initialId={agentInitialId} />}
           {screen === 'orders' && <ScreenOrders />}
-          {screen === 'settings' && <ScreenSettings />}
+          {screen === 'settings' && <ScreenSettings initialSection={settingsSection} />}
           {screen === 'alerts' &&
           <div style={{ padding: '28px 32px', overflowY: 'auto', height: '100%' }}>
               <div style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--zinc-400)', marginBottom: 4 }}>ALERTS</div>
@@ -2524,7 +2906,8 @@ const App = () => {
           }
         </div>
       </div>
-    </div>);
+    </div>
+    </React.Fragment>);
 
 };
 

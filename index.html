@@ -150,8 +150,13 @@ const Icon = ({ d, size = 16, color = 'currentColor', fill = 'none', strokeW = 1
   </svg>;
 
 
+// ─── DATA STORE (localStorage-backed) ─────────────────────────────
+function _loadData(key, defaults) {
+  try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : defaults; } catch(e) { return defaults; }
+}
+
 // ─── MOCK DATA ─────────────────────────────────────────────────────
-const PRODUCTS = [
+const _DEFAULT_PRODUCTS = [
 { id: 'p1', name: 'プレミアム醤油ドレッシング', variant: '300ml', sku: 'SKU-2341', agentId: 'AGT-001',
   status: 'active', monthlySavings: 124000, targetSavings: 200000, orderFreq: '週次',
   tier1: [
@@ -199,8 +204,7 @@ const PRODUCTS = [
 
 }];
 
-
-const ACTIVITY = [
+const _DEFAULT_ACTIVITY = [
 { id: 1, agentId: 'AGT-001', product: '醤油ドレッシング', action: '山田食品工業に相見積依頼を送信', type: 'send', time: '28秒前', impact: null },
 { id: 2, agentId: 'AGT-002', product: '有機野菜スープ', action: '大阪食品OEMと価格交渉中 — ¥22,000削減見込み', type: 'negotiate', time: '1分前', impact: 22000 },
 { id: 3, agentId: 'AGT-003', product: 'グルテンフリーパスタ', action: '北海道米粉農協: 納期3日延滞を検知、督促メール自動送信', type: 'alert', time: '4分前', impact: null },
@@ -210,8 +214,7 @@ const ACTIVITY = [
 { id: 7, agentId: 'AGT-002', product: '有機野菜スープ', action: '九州食品センターが代替調達先として承認済み', type: 'check', time: '45分前', impact: null },
 { id: 8, agentId: 'AGT-003', product: 'グルテンフリーパスタ', action: '発注書 PO-20240418-003と納品書の数量不一致を検出 (差異: 50kg)', type: 'alert', time: '1時間前', impact: null }];
 
-
-const ORDERS = [
+const _DEFAULT_ORDERS = [
 { id: 'PO-20260418-001', product: 'プレミアム醤油ドレッシング', supplier: '山田食品工業', ordered: '2026/04/18', delivery: '2026/04/25', qty: 1000, unit: '本', status: 'on_track', analysis: '正常', discrepancy: null },
 { id: 'PO-20260415-002', product: '有機野菜スープ', supplier: '大阪食品OEM', ordered: '2026/04/15', delivery: '2026/04/28', qty: 500, unit: '缶', status: 'negotiating', analysis: '価格差異', discrepancy: { type: 'price', detail: '発注単価 ¥312 → 請求 ¥318 (+¥6/缶)。承認待ち。', severity: 'warning' } },
 { id: 'PO-20260413-003', product: 'グルテンフリーパスタ', supplier: '長野食品加工', ordered: '2026/04/13', delivery: '2026/04/21', qty: 300, unit: '袋', status: 'delayed', analysis: '遅延リスク', discrepancy: { type: 'delay', detail: '当初納期より3日遅延。督促済み。代替調達先を検索中。', severity: 'error' } },
@@ -220,11 +223,16 @@ const ORDERS = [
 { id: 'PO-20260416-006', product: '有機野菜スープ', supplier: '九州食品センター', ordered: '2026/04/16', delivery: '2026/04/24', qty: 800, unit: '缶', status: 'on_track', analysis: '正常', discrepancy: null },
 { id: 'PO-20260412-007', product: 'プレミアム醤油ドレッシング', supplier: '東京フーズ製造', ordered: '2026/04/12', delivery: '2026/04/19', qty: 500, unit: '本', status: 'qty_mismatch', analysis: '数量差異', discrepancy: { type: 'qty', detail: '納品書数量 480本 vs 発注 500本 (差異: 20本)。確認依頼済み。', severity: 'warning' } }];
 
-
-const ALERTS = [
+const _DEFAULT_ALERTS = [
 { id: 'a1', type: 'error', product: 'グルテンフリーパスタ', msg: '長野食品加工: 納期3日遅延。代替調達中。', time: '4分前', action: '対処中' },
 { id: 'a2', type: 'warning', product: '有機野菜スープ', msg: '大阪食品OEM: 請求単価が発注価格と乖離 (+¥6/缶)', time: '2時間前', action: '承認待ち' },
 { id: 'a3', type: 'warning', product: '醤油ドレッシング', msg: '東京フーズ: 納品数量が20本不足。確認依頼送信済み。', time: '1日前', action: '回答待ち' }];
+
+// Live data — loads from localStorage, falls back to defaults
+let PRODUCTS = _loadData('crft_products', _DEFAULT_PRODUCTS);
+let ACTIVITY = _loadData('crft_activity', _DEFAULT_ACTIVITY);
+let ORDERS   = _loadData('crft_orders',   _DEFAULT_ORDERS);
+let ALERTS   = _loadData('crft_alerts',   _DEFAULT_ALERTS);
 
 
 // ─── COMPONENTS ───────────────────────────────────────────────────
@@ -1291,8 +1299,384 @@ const AGENT_PERMS_FULL = [
 { k: 'order', l: '発注の自動実行', desc: '承認済み条件に基づいた発注を自律実行する（要閾値）', def: false }];
 
 
+// ─── DATA MANAGEMENT COMPONENTS ──────────────────────────────────
+
+const ProductModal = ({ prod, onClose, onSave }) => {
+  const [p, setP] = useState(JSON.parse(JSON.stringify(prod)));
+  const sp = (k, v) => setP((x) => ({ ...x, [k]: v }));
+  const inS = { width: '100%', padding: '8px 10px', border: '1px solid var(--zinc-200)', borderRadius: 7, fontSize: 13, fontFamily: 'inherit', color: 'var(--zinc-800)', background: 'white', outline: 'none', boxSizing: 'border-box' };
+  const lblS = { fontSize: 12, fontWeight: 600, color: 'var(--zinc-600)', display: 'block', marginBottom: 4 };
+
+  const addT1 = () => setP((x) => ({ ...x, tier1: [...(x.tier1 || []), { id: `t${Date.now()}`, name: '', role: '製造', location: '', rating: 4.5, leadTime: '4週間', currentPrice: 0, bestQuote: 0, lots: [], pricing: {}, tier2: [] }] }));
+  const setT1 = (i, k, v) => setP((x) => ({ ...x, tier1: x.tier1.map((t, j) => j === i ? { ...t, [k]: v } : t) }));
+  const delT1 = (i) => setP((x) => ({ ...x, tier1: x.tier1.filter((_, j) => j !== i) }));
+  const addT2 = (ti) => setP((x) => ({ ...x, tier1: x.tier1.map((t, j) => j === ti ? { ...t, tier2: [...(t.tier2 || []), { name: '', role: '', price: 0, unit: 'kg', lot: '', leadTime: '5日' }] } : t) }));
+  const setT2 = (ti, t2i, k, v) => setP((x) => ({ ...x, tier1: x.tier1.map((t, j) => j === ti ? { ...t, tier2: t.tier2.map((t2, k2) => k2 === t2i ? { ...t2, [k]: v } : t2) } : t) }));
+  const delT2 = (ti, t2i) => setP((x) => ({ ...x, tier1: x.tier1.map((t, j) => j === ti ? { ...t, tier2: t.tier2.filter((_, k2) => k2 !== t2i) } : t) }));
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: 'white', borderRadius: 14, width: '100%', maxWidth: 720, maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,.25)' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--zinc-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>{prod.name ? `商品編集: ${prod.name}` : '新規商品を追加'}</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}><Icon d={IC.x} size={16} color="var(--zinc-500)" /></button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--zinc-700)', marginBottom: 14, paddingBottom: 8, borderBottom: '1px solid var(--zinc-100)' }}>基本情報</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 8 }}>
+            <div><label style={lblS}>商品名</label><input value={p.name} onChange={(e) => sp('name', e.target.value)} placeholder="例: プレミアム醤油ドレッシング" style={inS} /></div>
+            <div><label style={lblS}>バリアント</label><input value={p.variant} onChange={(e) => sp('variant', e.target.value)} placeholder="例: 300ml" style={inS} /></div>
+            <div><label style={lblS}>SKU</label><input value={p.sku} onChange={(e) => sp('sku', e.target.value)} placeholder="例: SKU-2341" style={inS} /></div>
+            <div><label style={lblS}>エージェントID</label><input value={p.agentId} onChange={(e) => sp('agentId', e.target.value)} placeholder="例: AGT-001" style={inS} /></div>
+            <div><label style={lblS}>ステータス</label>
+              <select value={p.status} onChange={(e) => sp('status', e.target.value)} style={{ ...inS, width: 'auto' }}>
+                <option value="active">稼働中</option><option value="negotiating">交渉中</option><option value="alert">アラート</option><option value="paused">停止</option>
+              </select></div>
+            <div><label style={lblS}>発注頻度</label>
+              <select value={p.orderFreq} onChange={(e) => sp('orderFreq', e.target.value)} style={{ ...inS, width: 'auto' }}>
+                <option>週次</option><option>隔週</option><option>月次</option><option>四半期</option>
+              </select></div>
+            <div><label style={lblS}>月間削減額 (¥)</label><input type="number" value={p.monthlySavings} onChange={(e) => sp('monthlySavings', parseInt(e.target.value) || 0)} style={inS} /></div>
+            <div><label style={lblS}>目標削減額 (¥/月)</label><input type="number" value={p.targetSavings} onChange={(e) => sp('targetSavings', parseInt(e.target.value) || 0)} style={inS} /></div>
+          </div>
+
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--zinc-700)', margin: '20px 0 12px', paddingBottom: 8, borderBottom: '1px solid var(--zinc-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Tier1サプライヤー ({(p.tier1 || []).length}社)</span>
+            <button onClick={addT1} style={{ padding: '5px 10px', background: 'var(--green-50)', border: '1px solid var(--green-200)', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--green-700)', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Icon d={IC.plus} size={11} color="var(--green-700)" />追加
+            </button>
+          </div>
+          {(p.tier1 || []).map((t1, ti) => (
+            <div key={t1.id || ti} style={{ border: '1px solid var(--zinc-200)', borderRadius: 10, padding: '14px 16px', marginBottom: 12, background: 'var(--zinc-50)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--green-700)' }}>Tier1 サプライヤー {ti + 1}</span>
+                <button onClick={() => delT1(ti)} style={{ padding: '3px 8px', background: 'var(--error-light)', border: '1px solid #fca5a5', borderRadius: 5, fontSize: 11, cursor: 'pointer', color: 'var(--error)' }}>削除</button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                <div><label style={lblS}>会社名</label><input value={t1.name} onChange={(e) => setT1(ti, 'name', e.target.value)} placeholder="例: 山田食品工業" style={{ ...inS, background: 'white' }} /></div>
+                <div><label style={lblS}>所在地</label><input value={t1.location} onChange={(e) => setT1(ti, 'location', e.target.value)} placeholder="例: 千葉県" style={{ ...inS, background: 'white' }} /></div>
+                <div><label style={lblS}>リードタイム</label><input value={t1.leadTime} onChange={(e) => setT1(ti, 'leadTime', e.target.value)} placeholder="例: 4週間" style={{ ...inS, background: 'white' }} /></div>
+                <div><label style={lblS}>評価 (1–5)</label><input type="number" min="1" max="5" step="0.1" value={t1.rating} onChange={(e) => setT1(ti, 'rating', parseFloat(e.target.value) || 0)} style={{ ...inS, background: 'white' }} /></div>
+                <div><label style={lblS}>現在単価 (¥)</label><input type="number" value={t1.currentPrice} onChange={(e) => setT1(ti, 'currentPrice', parseInt(e.target.value) || 0)} style={{ ...inS, background: 'white' }} /></div>
+                <div><label style={lblS}>最安見積 (¥)</label><input type="number" value={t1.bestQuote} onChange={(e) => setT1(ti, 'bestQuote', parseInt(e.target.value) || 0)} style={{ ...inS, background: 'white' }} /></div>
+              </div>
+              <div style={{ borderTop: '1px solid var(--zinc-200)', paddingTop: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--zinc-600)' }}>Tier2 原材料サプライヤー ({(t1.tier2 || []).length}社)</span>
+                  <button onClick={() => addT2(ti)} style={{ padding: '3px 8px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 5, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <Icon d={IC.plus} size={10} color="var(--zinc-500)" />追加
+                  </button>
+                </div>
+                {(t1.tier2 || []).map((t2, t2i) => (
+                  <div key={t2i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 80px 60px 80px 28px', gap: 6, marginBottom: 6, alignItems: 'end' }}>
+                    <div><label style={{ ...lblS, fontSize: 10 }}>会社名</label><input value={t2.name} onChange={(e) => setT2(ti, t2i, 'name', e.target.value)} placeholder="例: 丸大豆農産" style={{ ...inS, fontSize: 12 }} /></div>
+                    <div><label style={{ ...lblS, fontSize: 10 }}>役割</label><input value={t2.role} onChange={(e) => setT2(ti, t2i, 'role', e.target.value)} placeholder="大豆原料" style={{ ...inS, fontSize: 12 }} /></div>
+                    <div><label style={{ ...lblS, fontSize: 10 }}>単価(¥)</label><input type="number" value={t2.price} onChange={(e) => setT2(ti, t2i, 'price', parseInt(e.target.value) || 0)} style={{ ...inS, fontSize: 12 }} /></div>
+                    <div><label style={{ ...lblS, fontSize: 10 }}>単位</label><input value={t2.unit} onChange={(e) => setT2(ti, t2i, 'unit', e.target.value)} placeholder="kg" style={{ ...inS, fontSize: 12 }} /></div>
+                    <div><label style={{ ...lblS, fontSize: 10 }}>最小ロット</label><input value={t2.lot} onChange={(e) => setT2(ti, t2i, 'lot', e.target.value)} placeholder="500kg" style={{ ...inS, fontSize: 12 }} /></div>
+                    <button onClick={() => delT2(ti, t2i)} style={{ padding: 6, background: 'var(--error-light)', border: '1px solid #fca5a5', borderRadius: 5, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-end', height: 32 }}><Icon d={IC.x} size={11} color="var(--error)" /></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: '12px 24px', borderTop: '1px solid var(--zinc-200)', display: 'flex', gap: 8, justifyContent: 'flex-end', flexShrink: 0 }}>
+          <button onClick={onClose} style={{ padding: '8px 16px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 7, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>キャンセル</button>
+          <button onClick={() => onSave(p)} style={{ padding: '8px 20px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>保存</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const OrderModal = ({ ord, onClose, onSave }) => {
+  const [o, setO] = useState(JSON.parse(JSON.stringify(ord)));
+  const so = (k, v) => setO((x) => ({ ...x, [k]: v }));
+  const inS = { width: '100%', padding: '8px 10px', border: '1px solid var(--zinc-200)', borderRadius: 7, fontSize: 13, fontFamily: 'inherit', color: 'var(--zinc-800)', background: 'white', outline: 'none' };
+  const lblS = { fontSize: 12, fontWeight: 600, color: 'var(--zinc-600)', display: 'block', marginBottom: 4 };
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: 'white', borderRadius: 14, width: '100%', maxWidth: 560, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,.25)' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--zinc-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontWeight: 700 }}>発注を{ord.product ? '編集' : '追加'}</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}><Icon d={IC.x} size={16} color="var(--zinc-500)" /></button>
+        </div>
+        <div style={{ padding: '20px 24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <div><label style={lblS}>発注番号</label><input value={o.id} onChange={(e) => so('id', e.target.value)} style={inS} /></div>
+            <div><label style={lblS}>ステータス</label>
+              <select value={o.status} onChange={(e) => so('status', e.target.value)} style={inS}>
+                <option value="on_track">正常</option><option value="negotiating">交渉中</option><option value="delayed">遅延</option><option value="completed">完了</option><option value="qty_mismatch">数量差異</option>
+              </select></div>
+            <div><label style={lblS}>商品名</label><input value={o.product} onChange={(e) => so('product', e.target.value)} style={inS} /></div>
+            <div><label style={lblS}>サプライヤー</label><input value={o.supplier} onChange={(e) => so('supplier', e.target.value)} style={inS} /></div>
+            <div><label style={lblS}>発注日 (YYYY/MM/DD)</label><input value={o.ordered} onChange={(e) => so('ordered', e.target.value)} placeholder="2026/05/01" style={inS} /></div>
+            <div><label style={lblS}>納期 (YYYY/MM/DD)</label><input value={o.delivery} onChange={(e) => so('delivery', e.target.value)} placeholder="2026/05/15" style={inS} /></div>
+            <div><label style={lblS}>数量</label><input type="number" value={o.qty} onChange={(e) => so('qty', parseInt(e.target.value) || 0)} style={inS} /></div>
+            <div><label style={lblS}>単位</label><input value={o.unit} onChange={(e) => so('unit', e.target.value)} placeholder="個/本/缶/袋" style={inS} /></div>
+            <div style={{ gridColumn: '1/-1' }}><label style={lblS}>備考・分析</label><input value={o.analysis} onChange={(e) => so('analysis', e.target.value)} placeholder="例: 正常, 遅延リスク, 価格差異..." style={inS} /></div>
+          </div>
+        </div>
+        <div style={{ padding: '12px 24px', borderTop: '1px solid var(--zinc-200)', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '8px 16px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 7, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>キャンセル</button>
+          <button onClick={() => onSave(o)} style={{ padding: '8px 20px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>保存</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const DataSection = () => {
+  const [tab, setTab] = useState('products');
+  const [prods, setProds] = useState(() => JSON.parse(JSON.stringify(PRODUCTS)));
+  const [ords, setOrds] = useState(() => JSON.parse(JSON.stringify(ORDERS)));
+  const [alts, setAlts] = useState(() => JSON.parse(JSON.stringify(ALERTS)));
+  const [toast, setToast] = useState('');
+  const [editP, setEditP] = useState(null);
+  const [showPModal, setShowPModal] = useState(false);
+  const [editO, setEditO] = useState(null);
+  const [showOModal, setShowOModal] = useState(false);
+  const [jsonMode, setJsonMode] = useState(false);
+  const [jsonText, setJsonText] = useState('');
+  const [jsonError, setJsonError] = useState('');
+
+  const flash = (m) => { setToast(m); setTimeout(() => setToast(''), 2800); };
+
+  const saveAndReload = (np, no, na) => {
+    localStorage.setItem('crft_products', JSON.stringify(np || prods));
+    localStorage.setItem('crft_orders', JSON.stringify(no || ords));
+    localStorage.setItem('crft_alerts', JSON.stringify(na || alts));
+    flash('保存しました。3秒後にページをリロードします...');
+    setTimeout(() => window.location.reload(), 3000);
+  };
+
+  const handleJsonImport = () => {
+    try {
+      const d = JSON.parse(jsonText);
+      if (d.products) setProds(d.products);
+      if (d.orders) setOrds(d.orders);
+      if (d.alerts) setAlts(d.alerts);
+      setJsonError('');
+      setJsonMode(false);
+      flash('インポートしました。「保存して反映」を押してください。');
+    } catch(e) {
+      setJsonError('JSONパースエラー: ' + e.message);
+    }
+  };
+
+  const resetToDemo = () => {
+    if (!confirm('デモデータにリセットしますか？現在のデータはすべて削除されます。')) return;
+    localStorage.removeItem('crft_products');
+    localStorage.removeItem('crft_orders');
+    localStorage.removeItem('crft_alerts');
+    localStorage.removeItem('crft_activity');
+    flash('リセットしました。3秒後にページをリロードします...');
+    setTimeout(() => window.location.reload(), 3000);
+  };
+
+  const statusLabels = { active: '稼働中', negotiating: '交渉中', alert: 'アラート', paused: '停止' };
+  const statusColors = { active: 'green', negotiating: 'blue', alert: 'red', paused: 'neutral' };
+  const orderStatusLabels = { on_track: '正常', negotiating: '交渉中', delayed: '遅延', completed: '完了', qty_mismatch: '数量差異' };
+  const orderStatusColors = { on_track: 'green', negotiating: 'blue', delayed: 'red', completed: 'neutral', qty_mismatch: 'yellow' };
+
+  return (
+    <div style={{ maxWidth: 900 }}>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 11, fontFamily: 'Futura,sans-serif', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--zinc-400)', marginBottom: 4 }}>DATA MANAGEMENT</div>
+        <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.01em', marginBottom: 6 }}>データ管理</h2>
+        <p style={{ fontSize: 13, color: 'var(--zinc-500)', lineHeight: 1.6 }}>商品・サプライヤー・発注データを編集して実際の調達業務に対応させます。変更は「保存して反映」を押すと次回起動時から反映されます。</p>
+      </div>
+
+      {toast && <div style={{ padding: '10px 14px', background: 'var(--green-700)', color: 'white', borderRadius: 8, fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Icon d={IC.check} size={14} color="white" />{toast}</div>}
+
+      {/* JSON modal */}
+      {jsonMode && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+          <div style={{ background: 'white', borderRadius: 14, width: '100%', maxWidth: 720, maxHeight: '82vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,.25)' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--zinc-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div style={{ fontWeight: 700 }}>JSONで一括編集 / エクスポート</div>
+              <button onClick={() => { setJsonMode(false); setJsonError(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}><Icon d={IC.x} size={16} color="var(--zinc-500)" /></button>
+            </div>
+            <div style={{ flex: 1, padding: 20, overflowY: 'auto' }}>
+              <p style={{ fontSize: 12, color: 'var(--zinc-500)', marginBottom: 8, lineHeight: 1.6 }}>このJSONを直接編集してインポートするか、コピーしてバックアップに使用できます。<br /><strong>products</strong>（商品）、<strong>orders</strong>（発注）、<strong>alerts</strong>（アラート）の3キーを持つオブジェクトです。</p>
+              <textarea value={jsonText} onChange={(e) => setJsonText(e.target.value)}
+                style={{ width: '100%', height: 340, fontFamily: 'ui-monospace,monospace', fontSize: 11, padding: 12, border: '1px solid var(--zinc-200)', borderRadius: 8, resize: 'vertical', lineHeight: 1.5 }} />
+              {jsonError && <div style={{ color: 'var(--error)', fontSize: 12, marginTop: 6 }}>{jsonError}</div>}
+            </div>
+            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--zinc-200)', display: 'flex', gap: 8, justifyContent: 'flex-end', flexShrink: 0 }}>
+              <button onClick={() => { navigator.clipboard?.writeText(jsonText).catch(() => {}); flash('コピーしました'); }} style={{ padding: '7px 14px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 7, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>クリップボードにコピー</button>
+              <button onClick={handleJsonImport} style={{ padding: '7px 14px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>インポート</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Top actions */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+        <button onClick={() => { setJsonText(JSON.stringify({ products: prods, orders: ords, alerts: alts }, null, 2)); setJsonMode(true); }}
+          style={{ padding: '7px 14px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 7, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--zinc-600)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Icon d={IC.arrow} size={13} color="var(--zinc-500)" />JSONで一括編集/エクスポート
+        </button>
+        <button onClick={resetToDemo}
+          style={{ padding: '7px 14px', background: 'white', border: '1px solid #fca5a5', borderRadius: 7, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--error)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Icon d={IC.refresh} size={13} color="var(--error)" />デモデータにリセット
+        </button>
+        <button onClick={() => saveAndReload()}
+          style={{ padding: '7px 14px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+          <Icon d={IC.check} size={13} color="white" />保存して反映
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--zinc-200)', marginBottom: 20 }}>
+        {[{ k: 'products', l: `商品・サプライヤー (${prods.length})` }, { k: 'orders', l: `発注管理 (${ords.length})` }, { k: 'alerts', l: `アラート (${alts.length})` }].map((t) => (
+          <button key={t.k} onClick={() => setTab(t.k)} style={{ padding: '9px 16px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: tab === t.k ? 600 : 400, color: tab === t.k ? 'var(--green-600)' : 'var(--zinc-500)', borderBottom: `2px solid ${tab === t.k ? 'var(--green-600)' : 'transparent'}`, marginBottom: -1 }}>
+            {t.l}
+          </button>
+        ))}
+      </div>
+
+      {/* Products */}
+      {tab === 'products' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+            <button onClick={() => { setEditP({ id: `p${Date.now()}`, name: '', variant: '', sku: '', agentId: `AGT-00${prods.length + 1}`, status: 'active', monthlySavings: 0, targetSavings: 0, orderFreq: '月次', tier1: [] }); setShowPModal(true); }}
+              style={{ padding: '7px 14px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Icon d={IC.plus} size={13} color="white" />商品を追加
+            </button>
+          </div>
+          {prods.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '32px 24px', background: 'white', border: '1px dashed var(--zinc-300)', borderRadius: 12, color: 'var(--zinc-400)', fontSize: 13 }}>
+              商品データがありません。「商品を追加」から入力してください。
+            </div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {prods.map((p) => (
+              <div key={p.id} style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 10, padding: '14px 18px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontWeight: 600, fontSize: 14 }}>{p.name || '(未設定)'}</span>
+                      <Badge type={statusColors[p.status] || 'neutral'} size="xs">{statusLabels[p.status] || p.status}</Badge>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--zinc-400)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      <span>{p.sku}</span><span>·</span><span>{p.variant}</span><span>·</span><span>{p.agentId}</span><span>·</span><span>発注頻度: {p.orderFreq}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--zinc-500)', marginTop: 6, display: 'flex', gap: 10 }}>
+                      <span>Tier1: {(p.tier1 || []).length}社</span>
+                      <span>·</span>
+                      <span>目標削減: ¥{(p.targetSavings || 0).toLocaleString()}/月</span>
+                      {p.monthlySavings > 0 && <><span>·</span><span style={{ color: 'var(--green-600)', fontWeight: 600 }}>現在 ¥{(p.monthlySavings || 0).toLocaleString()}/月削減中</span></>}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <button onClick={() => { setEditP(JSON.parse(JSON.stringify(p))); setShowPModal(true); }}
+                      style={{ padding: '6px 12px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>編集</button>
+                    <button onClick={() => { if (confirm(`「${p.name}」を削除しますか?`)) setProds((pp) => pp.filter((x) => x.id !== p.id)); }}
+                      style={{ padding: '6px 10px', background: 'var(--error-light)', border: '1px solid #fca5a5', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--error)' }}>削除</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Orders */}
+      {tab === 'orders' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+            <button onClick={() => { const today = new Date().toISOString().slice(0, 10).replace(/-/g, '/'); setEditO({ id: `PO-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(ords.length + 1).padStart(3, '0')}`, product: '', supplier: '', ordered: today, delivery: '', qty: 0, unit: '個', status: 'on_track', analysis: '正常', discrepancy: null }); setShowOModal(true); }}
+              style={{ padding: '7px 14px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Icon d={IC.plus} size={13} color="white" />発注を追加
+            </button>
+          </div>
+          <div style={{ background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 10, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: 'var(--zinc-50)', borderBottom: '1px solid var(--zinc-200)' }}>
+                  {['発注番号', '商品', 'サプライヤー', '発注日', '納期', '数量', 'ステータス', '操作'].map((h) => (
+                    <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, fontSize: 11, color: 'var(--zinc-600)', whiteSpace: 'nowrap' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {ords.map((o, i) => (
+                  <tr key={o.id} style={{ borderBottom: i < ords.length - 1 ? '1px solid var(--zinc-100)' : 'none' }}>
+                    <td style={{ padding: '10px 12px', fontFamily: 'ui-monospace,monospace', fontSize: 11, color: 'var(--zinc-500)' }}>{o.id}</td>
+                    <td style={{ padding: '10px 12px', fontWeight: 500 }}>{o.product}</td>
+                    <td style={{ padding: '10px 12px', color: 'var(--zinc-600)' }}>{o.supplier}</td>
+                    <td style={{ padding: '10px 12px', color: 'var(--zinc-500)', fontSize: 12 }}>{o.ordered}</td>
+                    <td style={{ padding: '10px 12px', color: 'var(--zinc-500)', fontSize: 12 }}>{o.delivery}</td>
+                    <td style={{ padding: '10px 12px' }}>{o.qty}{o.unit}</td>
+                    <td style={{ padding: '10px 12px' }}><Badge type={orderStatusColors[o.status] || 'neutral'} size="xs">{orderStatusLabels[o.status] || o.status}</Badge></td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button onClick={() => { setEditO(JSON.parse(JSON.stringify(o))); setShowOModal(true); }} style={{ padding: '4px 10px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 5, fontSize: 11, cursor: 'pointer' }}>編集</button>
+                        <button onClick={() => { if (confirm('この発注を削除しますか?')) setOrds((oo) => oo.filter((x) => x.id !== o.id)); }} style={{ padding: '4px 8px', background: 'var(--error-light)', border: '1px solid #fca5a5', borderRadius: 5, fontSize: 11, cursor: 'pointer', color: 'var(--error)' }}>削除</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {ords.length === 0 && <tr><td colSpan={8} style={{ padding: 28, textAlign: 'center', color: 'var(--zinc-400)', fontSize: 13 }}>発注データがありません</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Alerts */}
+      {tab === 'alerts' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+            <button onClick={() => setAlts((a) => [...a, { id: `a${Date.now()}`, type: 'warning', product: '', msg: '', time: '今', action: '確認中' }])}
+              style={{ padding: '7px 14px', background: 'var(--green-600)', color: 'white', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Icon d={IC.plus} size={13} color="white" />アラートを追加
+            </button>
+          </div>
+          {alts.length === 0 && <div style={{ textAlign: 'center', padding: '28px', background: 'white', border: '1px solid var(--zinc-200)', borderRadius: 10, color: 'var(--zinc-400)', fontSize: 13 }}>アラートはありません</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {alts.map((a) => (
+              <div key={a.id} style={{ background: 'white', border: `1px solid ${a.type === 'error' ? '#fca5a5' : '#fcd34d'}`, borderRadius: 10, padding: '12px 16px' }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                      <select value={a.type} onChange={(e) => setAlts((al) => al.map((x) => x.id === a.id ? { ...x, type: e.target.value } : x))}
+                        style={{ fontSize: 11, border: '1px solid var(--zinc-200)', borderRadius: 5, padding: '3px 6px', fontFamily: 'inherit', background: 'white' }}>
+                        <option value="error">エラー</option><option value="warning">警告</option>
+                      </select>
+                      <input value={a.product} onChange={(e) => setAlts((al) => al.map((x) => x.id === a.id ? { ...x, product: e.target.value } : x))}
+                        placeholder="商品名" style={{ fontSize: 12, border: '1px solid var(--zinc-200)', borderRadius: 5, padding: '3px 8px', fontFamily: 'inherit', flex: 1 }} />
+                    </div>
+                    <input value={a.msg} onChange={(e) => setAlts((al) => al.map((x) => x.id === a.id ? { ...x, msg: e.target.value } : x))}
+                      placeholder="アラートメッセージ（例: サプライヤーXXX: 納期3日遅延...）" style={{ width: '100%', fontSize: 13, border: '1px solid var(--zinc-200)', borderRadius: 6, padding: '6px 10px', fontFamily: 'inherit' }} />
+                  </div>
+                  <button onClick={() => { if (confirm('削除しますか?')) setAlts((al) => al.filter((x) => x.id !== a.id)); }}
+                    style={{ padding: '6px 10px', background: 'var(--error-light)', border: '1px solid #fca5a5', borderRadius: 6, fontSize: 12, cursor: 'pointer', color: 'var(--error)', flexShrink: 0 }}>削除</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Modals */}
+      {showPModal && editP && (
+        <ProductModal prod={editP} onClose={() => { setShowPModal(false); setEditP(null); }}
+          onSave={(p) => { setProds((pp) => pp.find((x) => x.id === p.id) ? pp.map((x) => x.id === p.id ? p : x) : [...pp, p]); setShowPModal(false); setEditP(null); flash('商品を保存しました。「保存して反映」を押してください。'); }} />
+      )}
+      {showOModal && editO && (
+        <OrderModal ord={editO} onClose={() => { setShowOModal(false); setEditO(null); }}
+          onSave={(o) => { setOrds((oo) => oo.find((x) => x.id === o.id) ? oo.map((x) => x.id === o.id ? o : x) : [...oo, o]); setShowOModal(false); setEditO(null); flash('発注を保存しました。「保存して反映」を押してください。'); }} />
+      )}
+    </div>
+  );
+};
+
+// ─── SETTINGS ─────────────────────────────────────────────────────
 const ScreenSettings = ({ initialSection }) => {
-  const [section, setSection] = useState(initialSection || 'agent');
+  const [section, setSection] = useState(initialSection || 'data');
   useEffect(() => { if (initialSection) setSection(initialSection); }, [initialSection]);
 
   // Agent settings state
@@ -1362,6 +1746,7 @@ const ScreenSettings = ({ initialSection }) => {
   const setG = (k, v) => setGuide((g) => ({ ...g, [k]: v }));
 
   const SECTIONS = [
+  { k: 'data', l: 'データ管理', icon: IC.package, desc: '商品・発注・サプライヤーデータの編集' },
   { k: 'agent', l: 'エージェント設定', icon: IC.zap, desc: 'メール連携と自律実行の許可' },
   { k: 'users', l: 'ユーザー管理', icon: IC.user, desc: 'メンバー追加・権限編集・アカウント情報' },
   { k: 'template', l: 'メールテンプレート', icon: IC.arrow, desc: 'エージェントの送信文面を編集' },
@@ -1600,6 +1985,8 @@ const ScreenSettings = ({ initialSection }) => {
             </div>
           </div>
         }
+
+        {section === 'data' && <DataSection />}
 
         {section === 'guide' &&
         <div style={{ maxWidth: 860 }}>
